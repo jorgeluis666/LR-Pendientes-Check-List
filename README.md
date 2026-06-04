@@ -24,3 +24,14 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
 - `npm run build`
 - `npm run start`
 - `npm run lint`
+
+## Despliegue en GitHub Pages
+
+El repositorio incluye un workflow en `.github/workflows/deploy-pages.yml` que publica la exportacion estatica de Next en GitHub Pages cuando se hace push a `main`.
+
+Para que la app publicada se conecte a Supabase, configura estos secrets en GitHub:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+
+En GitHub, revisa tambien que Pages use `GitHub Actions` como fuente de despliegue.
