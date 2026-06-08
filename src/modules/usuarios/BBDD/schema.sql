@@ -63,6 +63,51 @@ $$;
 grant execute on function public.is_workspace_member(uuid) to authenticated;
 grant execute on function public.is_workspace_manager(uuid) to authenticated;
 
+create or replace function public.create_workspace_with_owner(workspace_name text)
+returns table (
+  id uuid,
+  nombre text,
+  owner_id uuid
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  new_workspace public.workspaces%rowtype;
+begin
+  if auth.uid() is null then
+    raise exception 'Usuario no autenticado';
+  end if;
+
+  insert into public.workspaces (nombre, owner_id)
+  values (coalesce(nullif(trim(workspace_name), ''), 'Mi Workspace'), auth.uid())
+  returning * into new_workspace;
+
+  insert into public.workspace_members (
+    workspace_id,
+    user_id,
+    email,
+    rol,
+    estado,
+    orden
+  )
+  values (
+    new_workspace.id,
+    auth.uid(),
+    lower(auth.email()),
+    'owner',
+    'activo',
+    1
+  );
+
+  return query
+  select new_workspace.id, new_workspace.nombre, new_workspace.owner_id;
+end;
+$$;
+
+grant execute on function public.create_workspace_with_owner(text) to authenticated;
+
 drop policy if exists "members can read workspaces" on public.workspaces;
 drop policy if exists "users can create workspaces" on public.workspaces;
 drop policy if exists "owners can update workspaces" on public.workspaces;

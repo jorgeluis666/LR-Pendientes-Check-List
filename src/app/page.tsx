@@ -248,25 +248,10 @@ export default function Home() {
     if (!user) throw new Error("Sesion no disponible");
 
     const { data: workspace, error: workspaceError } = await supabase
-      .from("workspaces")
-      .insert([{ nombre, owner_id: user.id }])
-      .select("id, nombre, owner_id")
+      .rpc("create_workspace_with_owner", { workspace_name: nombre })
       .single();
 
     if (workspaceError || !workspace) throw workspaceError || new Error("No se pudo crear el workspace");
-
-    const { error: memberError } = await supabase.from("workspace_members").insert([
-      {
-        workspace_id: workspace.id,
-        user_id: user.id,
-        email: normalizeEmail(user.email),
-        rol: "owner",
-        estado: "activo",
-        orden: 1
-      }
-    ]);
-
-    if (memberError) throw memberError;
     return workspace as Workspace;
   }
 
