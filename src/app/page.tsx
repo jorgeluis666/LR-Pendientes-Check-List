@@ -31,6 +31,7 @@ type WorkspaceMembershipRow = {
 };
 
 const MANAGER_ROLES: MemberRole[] = ["owner", "admin"];
+const DEFAULT_WORKSPACE_NAME = "Mi Workspace";
 
 function normalizeEmail(email?: string | null) {
   return String(email || "").trim().toLowerCase();
@@ -80,11 +81,36 @@ function formatDate(dateString?: string | null): string {
   return date.toLocaleDateString("es-PE");
 }
 
+function getInitialWorkspaceName(email?: string | null) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return DEFAULT_WORKSPACE_NAME;
+
+  try {
+    const storedName = window.localStorage.getItem(`lr-pendientes-workspace:${normalized}`);
+    return storedName?.trim() || DEFAULT_WORKSPACE_NAME;
+  } catch {
+    return DEFAULT_WORKSPACE_NAME;
+  }
+}
+
+function storeInitialWorkspaceName(email: string, workspaceName: string) {
+  const normalized = normalizeEmail(email);
+  const trimmedName = workspaceName.trim();
+  if (!normalized || !trimmedName) return;
+
+  try {
+    window.localStorage.setItem(`lr-pendientes-workspace:${normalized}`, trimmedName);
+  } catch {
+    // El workspace tambien viaja en metadata; localStorage solo ayuda al primer login.
+  }
+}
+
 export default function Home() {
   const [user, setUser] = useState<User | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authForm, setAuthForm] = useState({ email: "", password: "" });
+  const [registerWorkspaceName, setRegisterWorkspaceName] = useState(DEFAULT_WORKSPACE_NAME);
   const [authError, setAuthError] = useState("");
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -200,7 +226,7 @@ export default function Home() {
       }
 
       if (!workspaceData.length) {
-        workspaceData = [await createWorkspace("Mi Workspace")];
+        workspaceData = [await createWorkspace(getInitialWorkspaceName(user.email))];
       }
 
       setWorkspaces(workspaceData);
@@ -227,7 +253,7 @@ export default function Home() {
       {
         workspace_id: workspace.id,
         user_id: user.id,
-        email: user.email,
+        email: normalizeEmail(user.email),
         rol: "owner",
         estado: "activo",
         orden: 1
@@ -266,19 +292,40 @@ export default function Home() {
 
     try {
       if (authMode === "login") {
-        const { error } = await supabase.auth.signInWithPassword(authForm);
+        const { error } = await supabase.auth.signInWithPassword({
+          email: normalizeEmail(authForm.email),
+          password: authForm.password
+        });
         if (error) {
           setAuthError(translateAuthError(error.message));
           return;
         }
         setAuthMessage("Inicio de sesion correcto. Cargando...");
       } else {
-        const { error } = await supabase.auth.signUp(authForm);
+        const email = normalizeEmail(authForm.email);
+        const workspaceName = registerWorkspaceName.trim() || DEFAULT_WORKSPACE_NAME;
+        storeInitialWorkspaceName(email, workspaceName);
+
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password: authForm.password,
+          options: {
+            data: {
+              workspace_name: workspaceName
+            }
+          }
+        });
+
         if (error) {
           setAuthError(translateAuthError(error.message));
           return;
         }
-        setAuthMessage("Cuenta creada. Revisa tu correo si Supabase solicita confirmacion.");
+
+        if (data.session) {
+          setAuthMessage("Cuenta creada. Preparando tu workspace...");
+        } else {
+          setAuthMessage("Cuenta creada. Confirma tu correo y vuelve a iniciar sesion para crear tu workspace.");
+        }
       }
     } catch (error) {
       setAuthError(translateAuthError(getErrorMessage(error)));
@@ -404,22 +451,43 @@ export default function Home() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-gray-100 px-4 py-10 text-gray-950">
-        <section className="mx-auto max-w-md rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-          <p className="text-xs font-bold uppercase tracking-[0.3em] text-red-700">LR Pendientes</p>
-          <h1 className="mt-3 text-3xl font-bold">Ingresa a tu workspace</h1>
-          <form onSubmit={handleAuthSubmit} className="mt-6 space-y-4">
+      <main className="relative min-h-screen overflow-hidden bg-gray-950 text-gray-950">
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: 'url("login-background.png")' }}
+        />
+        <div aria-hidden="true" className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/35 to-black/10" />
+        <section className="relative flex min-h-screen items-center px-4 py-8 sm:px-8 lg:px-16">
+          <form
+            onSubmit={handleAuthSubmit}
+            className="w-full max-w-md rounded-lg border border-white/30 bg-white/95 p-6 shadow-2xl backdrop-blur-sm sm:p-8"
+          >
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-red-700">LR Pendientes</p>
+            <h1 className="mt-3 text-3xl font-bold">Ingresa a tu workspace</h1>
+            <p className="mt-3 text-sm font-semibold leading-6 text-gray-600">
+              Crea tu cuenta, abre tu workspace y agrega tus propios usuarios con roles.
+            </p>
+            <div className="mt-6 space-y-4">
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1">
               <button
                 type="button"
-                onClick={() => setAuthMode("login")}
+                onClick={() => {
+                  setAuthMode("login");
+                  setAuthError("");
+                  setAuthMessage("");
+                }}
                 className={`rounded-md px-3 py-2 text-sm font-bold ${authMode === "login" ? "bg-white text-red-700 shadow-sm" : "text-gray-600"}`}
               >
                 Iniciar sesion
               </button>
               <button
                 type="button"
-                onClick={() => setAuthMode("register")}
+                onClick={() => {
+                  setAuthMode("register");
+                  setAuthError("");
+                  setAuthMessage("");
+                }}
                 className={`rounded-md px-3 py-2 text-sm font-bold ${authMode === "register" ? "bg-white text-red-700 shadow-sm" : "text-gray-600"}`}
               >
                 Crear cuenta
@@ -433,6 +501,16 @@ export default function Home() {
               onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
               className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
             />
+            {authMode === "register" ? (
+              <input
+                required
+                type="text"
+                placeholder="Nombre de tu workspace"
+                value={registerWorkspaceName}
+                onChange={(event) => setRegisterWorkspaceName(event.target.value)}
+                className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+              />
+            ) : null}
             <input
               required
               minLength={6}
@@ -451,6 +529,7 @@ export default function Home() {
             >
               {authLoading ? "Procesando..." : authMode === "login" ? "Entrar" : "Crear cuenta"}
             </button>
+            </div>
           </form>
         </section>
       </main>
