@@ -489,8 +489,8 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
         </button>
       </form>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
-        <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-2 border-b border-gray-200 px-6 py-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.3em] text-red-700">
               Pendientes activos
@@ -500,11 +500,11 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
           {loading ? <p className="text-sm font-semibold text-gray-500">Sincronizando...</p> : null}
         </div>
 
-        <div className="grid gap-3">
+        <div>
           {taskGroups.map((group) => (
-            <div key={group.name} className="space-y-3">
-              <div className="border-b border-gray-200 pb-2">
-                <h5 className="text-sm font-bold uppercase tracking-[0.2em] text-gray-600">
+            <div key={group.name}>
+              <div className="border-b border-gray-200 bg-green-500 px-5 py-2">
+                <h5 className="text-sm font-black uppercase tracking-[0.2em] text-green-950">
                   Pendientes de {group.name}
                 </h5>
               </div>
@@ -512,10 +512,10 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
               {group.tasks.map((task) => {
                 const editors = editingByTask[task.id] ?? [];
                 return (
-                  <article key={task.id} className="rounded-lg border border-gray-200 p-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(320px,1fr)_170px_170px_170px] 2xl:grid-cols-[minmax(360px,1fr)_170px_170px_170px_220px] lg:items-start">
+                  <article key={task.id} className={`border-b border-gray-200 px-5 py-4 ${task.estado === "en_proceso" ? "border-l-4 border-l-red-600 bg-red-50/40" : ""}`}>
+                <div className="grid gap-3 xl:grid-cols-[minmax(300px,1fr)_150px_150px_150px_300px] xl:items-start">
                   <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
                       Pendiente
                     </label>
                     <textarea
@@ -523,7 +523,7 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                       onFocus={() => updatePresence(task)}
                       onBlur={() => updatePresence(null)}
                       onChange={(event) => scheduleTaskSave(task.id, { titulo: event.target.value })}
-                      className="min-h-24 w-full resize-y rounded-lg border border-gray-300 px-4 py-3 text-base font-semibold leading-6 text-gray-950 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+                      className="min-h-14 w-full resize-y rounded-lg border border-gray-300 px-4 py-2 text-base font-bold leading-6 text-gray-950 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
                     />
                     {editors.length ? (
                       <p className="mt-2 text-xs font-semibold text-blue-700">
@@ -533,7 +533,7 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
                       Responsable
                     </label>
                     <input
@@ -543,12 +543,12 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                       onChange={(event) =>
                         scheduleTaskSave(task.id, { responsable: event.target.value || null })
                       }
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
                       Inicio
                     </label>
                     <input
@@ -559,12 +559,12 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                       onChange={(event) =>
                         scheduleTaskSave(task.id, { fecha_inicio: event.target.value || null })
                       }
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
                     />
                   </div>
 
                   <div>
-                    <label className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
+                    <label className="mb-1 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
                       Fin
                     </label>
                     <input
@@ -575,11 +575,11 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                       onChange={(event) =>
                         scheduleTaskSave(task.id, { fecha_fin: event.target.value || null })
                       }
-                      className="w-full rounded-lg border border-gray-300 px-4 py-3 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+                      className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
                     />
                   </div>
 
-                  <div className="flex flex-wrap gap-2 lg:col-span-4 2xl:col-span-1 2xl:justify-end">
+                  <div className="flex flex-wrap gap-2 xl:justify-end">
                     <select
                       value={task.estado}
                       onFocus={() => updatePresence(task)}
@@ -587,7 +587,11 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                       onChange={(event) =>
                         scheduleTaskSave(task.id, { estado: event.target.value as PendingStatus })
                       }
-                      className="rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+                      className={`rounded-lg border px-3 py-2 text-sm font-semibold outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100 ${
+                        task.estado === "en_proceso"
+                          ? "border-red-200 bg-red-600 text-white"
+                          : "border-gray-300 bg-white text-gray-700"
+                      }`}
                     >
                       <option value="pendiente">Pendiente</option>
                       <option value="en_proceso">En proceso</option>
