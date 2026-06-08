@@ -512,8 +512,8 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
               {group.tasks.map((task) => {
                 const editors = editingByTask[task.id] ?? [];
                 return (
-                  <article key={task.id} className="overflow-x-auto rounded-lg border border-gray-200 p-4">
-                <div className="grid min-w-[1120px] gap-4 lg:grid-cols-[minmax(360px,1fr)_170px_170px_170px_220px] lg:items-start">
+                  <article key={task.id} className="rounded-lg border border-gray-200 p-4">
+                <div className="grid gap-4 lg:grid-cols-[minmax(320px,1fr)_170px_170px_170px] 2xl:grid-cols-[minmax(360px,1fr)_170px_170px_170px_220px] lg:items-start">
                   <div>
                     <label className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
                       Pendiente
@@ -579,7 +579,7 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                     />
                   </div>
 
-                  <div className="flex flex-wrap gap-2 lg:justify-end">
+                  <div className="flex flex-wrap gap-2 lg:col-span-4 2xl:col-span-1 2xl:justify-end">
                     <select
                       value={task.estado}
                       onFocus={() => updatePresence(task)}
