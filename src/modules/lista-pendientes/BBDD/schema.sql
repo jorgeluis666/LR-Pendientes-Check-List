@@ -40,80 +40,31 @@ drop policy if exists "workspace members can delete pending tasks" on public.lis
 
 create policy "workspace members can read pending tasks"
   on public.lista_pendientes for select
-  using (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = lista_pendientes.workspace_id
-        and wm.user_id = auth.uid()
-        and wm.estado = 'activo'
-    )
-  );
+  using (public.is_workspace_member(workspace_id));
 
 create policy "workspace members can insert pending tasks"
   on public.lista_pendientes for insert
-  with check (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = lista_pendientes.workspace_id
-        and wm.user_id = auth.uid()
-        and wm.estado = 'activo'
-    )
-  );
+  with check (public.is_workspace_member(workspace_id));
 
 create policy "workspace members can update pending tasks"
   on public.lista_pendientes for update
-  using (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = lista_pendientes.workspace_id
-        and wm.user_id = auth.uid()
-        and wm.estado = 'activo'
-    )
-  )
-  with check (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = lista_pendientes.workspace_id
-        and wm.user_id = auth.uid()
-        and wm.estado = 'activo'
-    )
-  );
+  using (public.is_workspace_member(workspace_id))
+  with check (public.is_workspace_member(workspace_id));
 
 create policy "workspace members can delete pending tasks"
   on public.lista_pendientes for delete
-  using (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = lista_pendientes.workspace_id
-        and wm.user_id = auth.uid()
-        and wm.estado = 'activo'
-    )
-  );
+  using (public.is_workspace_member(workspace_id));
 
 drop policy if exists "workspace members can read completed tasks" on public.lista_pendientes_completadas;
 drop policy if exists "workspace members can insert completed tasks" on public.lista_pendientes_completadas;
 
 create policy "workspace members can read completed tasks"
   on public.lista_pendientes_completadas for select
-  using (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = lista_pendientes_completadas.workspace_id
-        and wm.user_id = auth.uid()
-        and wm.estado = 'activo'
-    )
-  );
+  using (public.is_workspace_member(workspace_id));
 
 create policy "workspace members can insert completed tasks"
   on public.lista_pendientes_completadas for insert
-  with check (
-    exists (
-      select 1 from public.workspace_members wm
-      where wm.workspace_id = lista_pendientes_completadas.workspace_id
-        and wm.user_id = auth.uid()
-        and wm.estado = 'activo'
-    )
-  );
+  with check (public.is_workspace_member(workspace_id));
 
 do $$
 begin
