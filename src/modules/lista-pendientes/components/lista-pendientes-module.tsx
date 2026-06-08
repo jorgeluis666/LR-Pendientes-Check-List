@@ -512,8 +512,8 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
               {group.tasks.map((task) => {
                 const editors = editingByTask[task.id] ?? [];
                 return (
-                  <article key={task.id} className="rounded-lg border border-gray-200 p-4">
-                <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_170px_170px_170px_220px] lg:items-start">
+                  <article key={task.id} className="overflow-x-auto rounded-lg border border-gray-200 p-4">
+                <div className="grid min-w-[1120px] gap-4 lg:grid-cols-[minmax(360px,1fr)_170px_170px_170px_220px] lg:items-start">
                   <div>
                     <label className="mb-2 block text-xs font-bold uppercase tracking-[0.2em] text-gray-500">
                       Pendiente
@@ -523,7 +523,7 @@ export function ListaPendientesModule({ user, workspaceId, responsables = [] }: 
                       onFocus={() => updatePresence(task)}
                       onBlur={() => updatePresence(null)}
                       onChange={(event) => scheduleTaskSave(task.id, { titulo: event.target.value })}
-                      className="min-h-20 w-full resize-y rounded-lg border border-gray-300 px-4 py-3 text-sm font-semibold text-gray-950 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+                      className="min-h-24 w-full resize-y rounded-lg border border-gray-300 px-4 py-3 text-base font-semibold leading-6 text-gray-950 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
                     />
                     {editors.length ? (
                       <p className="mt-2 text-xs font-semibold text-blue-700">
