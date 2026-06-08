@@ -1,6 +1,6 @@
 "use client";
 
-import { supabase } from "@/lib/supabase";
+import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 import { ListaPendientesModule } from "@/modules/lista-pendientes/components/lista-pendientes-module";
 import type { PendingResponsibleOption } from "@/modules/lista-pendientes/types";
 import type { User } from "@supabase/supabase-js";
@@ -146,6 +146,10 @@ export default function Home() {
     const initAuth = async () => {
       try {
         setSessionLoading(true);
+        if (!isSupabaseConfigured) {
+          setUser(null);
+          return;
+        }
         const { data } = await supabase.auth.getUser();
         setUser(data?.user ?? null);
       } finally {
@@ -154,6 +158,8 @@ export default function Home() {
     };
 
     initAuth();
+    if (!isSupabaseConfigured) return;
+
     const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
     });
@@ -291,6 +297,11 @@ export default function Home() {
     setAuthLoading(true);
 
     try {
+      if (!isSupabaseConfigured) {
+        setAuthError("Supabase no esta configurado. Agrega NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en GitHub Actions.");
+        return;
+      }
+
       if (authMode === "login") {
         const { error } = await supabase.auth.signInWithPassword({
           email: normalizeEmail(authForm.email),
@@ -468,6 +479,11 @@ export default function Home() {
             <p className="mt-3 text-sm font-semibold leading-6 text-gray-600">
               Crea tu cuenta, abre tu workspace y agrega tus propios usuarios con roles.
             </p>
+            {!isSupabaseConfigured ? (
+              <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                Falta conectar Supabase en GitHub Pages. Configura los secrets para activar el registro.
+              </p>
+            ) : null}
             <div className="mt-6 space-y-4">
             <div className="grid grid-cols-2 gap-2 rounded-lg bg-gray-100 p-1">
               <button
