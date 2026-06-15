@@ -1,4 +1,6 @@
-export type PendingStatus = "pendiente" | "en_proceso";
+export type PendingStatus = "pendiente" | "en_proceso" | "bloqueado";
+
+export type PendingPriority = "alta" | "media" | "baja";
 
 export type CompletedPendingAction = "completada" | "eliminada";
 
@@ -14,9 +16,16 @@ export interface PendingTask {
   titulo: string;
   responsable: string | null;
   estado: PendingStatus;
+  prioridad: PendingPriority;
+  orden: number;
   fecha_creacion: string;
   fecha_inicio: string | null;
   fecha_fin: string | null;
+  tiempo_acumulado_segundos: number;
+  temporizador_duracion_segundos: number;
+  temporizador_inicio: string | null;
+  temporizador_usuario_id: string | null;
+  temporizador_usuario_nombre: string | null;
   created_by: string | null;
   updated_at: string | null;
 }
@@ -32,6 +41,10 @@ export interface CompletedPendingTask {
   usuario_accion_id: string | null;
   usuario_accion_nombre: string;
   accion: CompletedPendingAction;
+  prioridad: PendingPriority;
+  fecha_inicio: string | null;
+  fecha_fin: string | null;
+  tiempo_total_segundos: number;
 }
 
 export interface PendingPresenceUser {

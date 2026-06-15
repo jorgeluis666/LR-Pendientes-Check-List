@@ -121,6 +121,7 @@ export default function Home() {
   const [inviteForm, setInviteForm] = useState({ email: "", rol: "viewer" as MemberRole });
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [view, setView] = useState<"pendientes" | "usuarios">("pendientes");
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const currentMembership = useMemo(
     () => members.find((member) => member.user_id === user?.id && member.workspace_id === workspaceActivo),
@@ -538,71 +539,106 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 text-gray-950">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-4 py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <p className="text-xs font-bold uppercase tracking-[0.3em] text-red-700">LR Pendientes</p>
-            <h1 className="text-2xl font-bold">Pendientes y usuarios</h1>
-          </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            <select
-              value={workspaceActivo}
-              onChange={(event) => setWorkspaceActivo(event.target.value)}
-              className="rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm font-semibold outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
-            >
-              {workspaces.map((workspace) => (
-                <option key={workspace.id} value={workspace.id}>{workspace.nombre}</option>
-              ))}
-            </select>
-            <button type="button" onClick={handleSignOut} className="rounded-lg border border-gray-300 px-4 py-3 text-sm font-bold text-gray-700 hover:bg-gray-50">
-              Salir
-            </button>
-          </div>
-        </div>
-      </header>
+    <main className="min-h-screen bg-slate-50 text-slate-950">
+      <aside
+        className={`fixed inset-y-0 left-0 z-40 border-r border-slate-200 bg-white transition-[width] duration-200 ${
+          sidebarOpen ? "w-72 shadow-xl" : "w-16"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => setSidebarOpen((current) => !current)}
+          className="absolute -right-5 top-5 grid h-10 w-10 place-items-center rounded-xl border border-slate-200 bg-white text-xl text-slate-600 shadow-sm"
+          aria-label={sidebarOpen ? "Cerrar menú" : "Abrir menú"}
+        >
+          {sidebarOpen ? "‹" : "›"}
+        </button>
 
-      <div className="mx-auto grid max-w-7xl gap-6 px-4 py-6 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="space-y-4">
-          <section className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <p className="text-sm font-semibold text-gray-600">Conectado como</p>
-            <p className="mt-1 break-all text-sm font-bold">{user.email}</p>
-          </section>
-
-          <form onSubmit={handleCreateWorkspace} className="rounded-lg border border-gray-200 bg-white p-4 shadow-sm">
-            <label className="text-sm font-bold text-gray-700">Nuevo workspace</label>
-            <div className="mt-3 space-y-2">
-              <input
-                value={newWorkspaceName}
-                onChange={(event) => setNewWorkspaceName(event.target.value)}
-                placeholder="Nombre"
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
-              />
-              <button type="submit" className="w-full rounded-lg bg-gray-950 px-4 py-2 text-sm font-bold text-white hover:bg-gray-800">
-                Crear
-              </button>
-            </div>
-          </form>
-
-          <nav className="grid gap-2 rounded-lg border border-gray-200 bg-white p-2 shadow-sm">
+        <div className="flex h-full flex-col overflow-hidden px-2 pb-4 pt-20">
+          <nav className="grid gap-3">
             <button
               type="button"
               onClick={() => setView("pendientes")}
-              className={`rounded-md px-4 py-3 text-left text-sm font-bold ${view === "pendientes" ? "bg-red-50 text-red-700" : "text-gray-700 hover:bg-gray-50"}`}
+              className={`flex h-14 items-center rounded-lg border text-sm font-bold ${
+                sidebarOpen ? "gap-3 px-4" : "justify-center"
+              } ${
+                view === "pendientes"
+                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-500"
+              }`}
+              title="Pendientes"
             >
-              Pendientes
+              <span className="text-base">P</span>
+              {sidebarOpen ? <span>Pendientes</span> : null}
             </button>
             <button
               type="button"
               onClick={() => setView("usuarios")}
-              className={`rounded-md px-4 py-3 text-left text-sm font-bold ${view === "usuarios" ? "bg-red-50 text-red-700" : "text-gray-700 hover:bg-gray-50"}`}
+              className={`flex h-14 items-center rounded-lg border text-sm font-bold ${
+                sidebarOpen ? "gap-3 px-4" : "justify-center"
+              } ${
+                view === "usuarios"
+                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-500"
+              }`}
+              title="Usuarios"
             >
-              Usuarios
+              <span className="text-base">U</span>
+              {sidebarOpen ? <span>Usuarios</span> : null}
             </button>
           </nav>
-        </aside>
 
-        <div className="min-w-0">
+          {sidebarOpen ? (
+            <div className="mt-6 grid gap-4">
+              <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs font-semibold text-slate-500">Conectado como</p>
+                <p className="mt-1 break-all text-sm font-bold">{user.email}</p>
+              </section>
+
+              <label className="grid gap-2 text-xs font-bold text-slate-600">
+                Workspace
+                <select
+                  value={workspaceActivo}
+                  onChange={(event) => setWorkspaceActivo(event.target.value)}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm font-semibold outline-none"
+                >
+                  {workspaces.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id}>{workspace.nombre}</option>
+                  ))}
+                </select>
+              </label>
+
+              <form onSubmit={handleCreateWorkspace} className="grid gap-2">
+                <input
+                  value={newWorkspaceName}
+                  onChange={(event) => setNewWorkspaceName(event.target.value)}
+                  placeholder="Nuevo workspace"
+                  className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none"
+                />
+                <button type="submit" className="rounded-lg bg-slate-950 px-4 py-2.5 text-sm font-bold text-white">
+                  Crear workspace
+                </button>
+              </form>
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className={`mt-auto flex h-11 items-center rounded-lg border border-slate-200 text-sm font-bold text-slate-600 ${
+              sidebarOpen ? "justify-center px-4" : "justify-center"
+            }`}
+            title="Salir"
+          >
+            {sidebarOpen ? "Salir" : "S"}
+          </button>
+        </div>
+      </aside>
+
+      <div className={`min-w-0 px-4 py-5 transition-[margin] duration-200 sm:px-6 lg:px-8 ${
+        sidebarOpen ? "ml-72" : "ml-16"
+      }`}>
+        <div className="mx-auto max-w-[1500px]">
           {workspaceLoading ? (
             <section className="rounded-lg border border-gray-200 bg-white p-6 text-sm font-semibold text-gray-500 shadow-sm">Cargando workspace...</section>
           ) : null}
