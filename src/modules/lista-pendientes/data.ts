@@ -26,7 +26,7 @@ export const reunionAmadorTask: InitialPendingTask = {
   fecha_inicio: null,
   responsable: "Diego",
   subtareas: reunionAmadorSubtasks,
-  titulo: "Reunión Amador"
+  titulo: "Reunion Amador"
 };
 
 export const legacyJorgeLuisPendingTitles = [

@@ -86,6 +86,7 @@ export function ListaPendientesModule({
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("Todas");
   const [completedHistoryView, setCompletedHistoryView] =
     useState<CompletedHistoryView>("completadas");
+  const [completedHistoryCollapsed, setCompletedHistoryCollapsed] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [dragState, setDragState] = useState<{
@@ -138,38 +139,34 @@ export function ListaPendientesModule({
 
     const { data: activeRows, error: activeError } = await supabase
       .from("lista_pendientes")
-      .select("id,subtareas")
+      .select("id,titulo,subtareas")
       .eq("workspace_id", workspaceId)
-      .eq("titulo", reunionAmadorTask.titulo)
       .eq("responsable", "Diego")
-      .limit(1);
+      .order("fecha_creacion", { ascending: true });
 
     if (activeError) throw activeError;
 
-    if (activeRows?.length) {
-      const current = normalizeSubtasks(activeRows[0].subtareas);
+    const existingActiveTask = activeRows?.find(
+      (task) => normalizeText(task.titulo) === normalizeText(reunionAmadorTask.titulo)
+    );
+
+    if (existingActiveTask) {
+      const current = normalizeSubtasks(existingActiveTask.subtareas);
       const merged = mergeSubtasks(current, reunionAmadorSubtasks);
-      if (merged.length !== current.length) {
+      if (merged.length !== current.length || existingActiveTask.titulo !== reunionAmadorTask.titulo) {
         const { error } = await supabase
           .from("lista_pendientes")
-          .update({ subtareas: merged, updated_at: new Date().toISOString() })
-          .eq("id", activeRows[0].id)
+          .update({
+            subtareas: merged,
+            titulo: reunionAmadorTask.titulo,
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", existingActiveTask.id)
           .eq("workspace_id", workspaceId);
         if (error) throw error;
       }
       return;
     }
-
-    const { data: historyRows, error: historyError } = await supabase
-      .from("lista_pendientes_completadas")
-      .select("id")
-      .eq("workspace_id", workspaceId)
-      .eq("titulo", reunionAmadorTask.titulo)
-      .eq("responsable", "Diego")
-      .limit(1);
-
-    if (historyError) throw historyError;
-    if (historyRows?.length) return;
 
     const { error } = await supabase.from("lista_pendientes").insert({
       ...reunionAmadorTask,
@@ -1174,12 +1171,20 @@ export function ListaPendientesModule({
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h3 className="text-lg font-extrabold">Historial de tareas</h3>
+            <h3 className="text-lg font-extrabold">Tareas completadas</h3>
             <p className="text-sm text-slate-500">
               {visibleCompletedTasks.length} tareas visibles · {completedTasks.length} en historial total
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setCompletedHistoryCollapsed((value) => !value)}
+              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold hover:bg-slate-50"
+              aria-expanded={!completedHistoryCollapsed}
+            >
+              {completedHistoryCollapsed ? "Mostrar" : "Minimizar"}
+            </button>
             {(["completadas", "eliminadas", "todas"] as CompletedHistoryView[]).map((view) => (
               <button
                 key={view}
@@ -1204,37 +1209,39 @@ export function ListaPendientesModule({
             </button>
           </div>
         </div>
-        <div>
-          {visibleCompletedTasks.map((task) => (
-            <article
-              key={task.id}
-              className="grid gap-3 border-b border-slate-200 px-5 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_repeat(3,max-content)_auto] lg:items-center"
-            >
-              <div>
-                <h4 className="font-bold">{task.titulo}</h4>
-                <p className="mt-1 text-xs text-slate-500">
-                  {task.responsable || "Sin asignar"} · {task.accion === "eliminada" ? "Eliminada" : "Completada"} por {task.usuario_accion_nombre}
-                </p>
-              </div>
-              <span className="text-xs text-slate-500">Creación: {formatLocalDate(task.fecha_creacion)}</span>
-              <span className="text-xs text-slate-500">Finalización: {formatLocalDate(task.fecha_finalizacion)}</span>
-              <span className="text-xs text-slate-500">Tiempo: {formatTimer(task.tiempo_total_segundos)}</span>
-              <button
-                type="button"
-                disabled={saving}
-                onClick={() => void restoreCompletedTask(task)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold"
+        {!completedHistoryCollapsed ? (
+          <div>
+            {visibleCompletedTasks.map((task) => (
+              <article
+                key={task.id}
+                className="grid gap-3 border-b border-slate-200 px-5 py-4 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_repeat(3,max-content)_auto] lg:items-center"
               >
-                Regresar
-              </button>
-            </article>
-          ))}
-          {!visibleCompletedTasks.length ? (
-            <div className="px-6 py-10 text-center text-sm text-slate-500">
-              Aún no hay tareas para este filtro.
-            </div>
-          ) : null}
-        </div>
+                <div>
+                  <h4 className="font-bold">{task.titulo}</h4>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {task.responsable || "Sin asignar"} · {task.accion === "eliminada" ? "Eliminada" : "Completada"} por {task.usuario_accion_nombre}
+                  </p>
+                </div>
+                <span className="text-xs text-slate-500">Creación: {formatLocalDate(task.fecha_creacion)}</span>
+                <span className="text-xs text-slate-500">Finalización: {formatLocalDate(task.fecha_finalizacion)}</span>
+                <span className="text-xs text-slate-500">Tiempo: {formatTimer(task.tiempo_total_segundos)}</span>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => void restoreCompletedTask(task)}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold"
+                >
+                  Regresar
+                </button>
+              </article>
+            ))}
+            {!visibleCompletedTasks.length ? (
+              <div className="px-6 py-10 text-center text-sm text-slate-500">
+                Aún no hay tareas para este filtro.
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </section>
     </section>
   );
