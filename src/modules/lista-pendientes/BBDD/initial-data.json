@@ -70,6 +70,40 @@
     "fecha_fin": "2026-06-17T12:00:00-05:00"
   },
   {
+    "titulo": "Reunión Amador",
+    "responsable": "Diego",
+    "estado": "pendiente",
+    "fecha_inicio": null,
+    "fecha_fin": null,
+    "subtareas": [
+      {
+        "id": "reunion-amador-1",
+        "titulo": "Enviar los presupuestos destinados para el mes de julio.",
+        "completada": false
+      },
+      {
+        "id": "reunion-amador-2",
+        "titulo": "Activar la campaña de almuerzos (mañana).",
+        "completada": false
+      },
+      {
+        "id": "reunion-amador-3",
+        "titulo": "Añadir los públicos de BCP a la campaña si los comparten.",
+        "completada": false
+      },
+      {
+        "id": "reunion-amador-4",
+        "titulo": "Crear una nueva cuenta de GA4 y compartir los accesos correspondientes.",
+        "completada": false
+      },
+      {
+        "id": "reunion-amador-5",
+        "titulo": "Actualizar la campaña con la nueva pieza de relatos.",
+        "completada": false
+      }
+    ]
+  },
+  {
     "titulo": "Llanos Import: actualización de conjuntos y anuncios completos con las piezas enviadas.",
     "responsable": "Diego",
     "estado": "pendiente",

@@ -35,6 +35,7 @@ El `schema.sql` tambien instala los campos usados por el Panel de Pendientes de 
 - prioridad alta, media o baja;
 - orden manual del tablero;
 - temporizador compartido, usuario activo y tiempo acumulado;
+- subtareas tipo checklist en cada pendiente;
 - fechas, prioridad y tiempo total dentro del historial;
 - restauracion de tareas desde el historial.
 

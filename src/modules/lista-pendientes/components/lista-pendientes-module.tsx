@@ -7,16 +7,18 @@ import {
   useEffect,
   useMemo,
   useRef,
-  useState
+  useState,
+  type PointerEvent as ReactPointerEvent
 } from "react";
 import { supabase } from "@/lib/supabase";
-import { initialPendingTasks } from "../data";
+import { initialPendingTasks, reunionAmadorSubtasks, reunionAmadorTask } from "../data";
 import type {
   CompletedPendingAction,
   CompletedPendingTask,
   PendingPresenceUser,
   PendingPriority,
   PendingResponsibleOption,
+  PendingSubtask,
   PendingStatus,
   PendingTask
 } from "../types";
@@ -36,6 +38,7 @@ type PendingTaskPatch = Partial<
     | "orden"
     | "prioridad"
     | "responsable"
+    | "subtareas"
     | "tiempo_acumulado_segundos"
     | "temporizador_duracion_segundos"
     | "temporizador_inicio"
@@ -49,9 +52,11 @@ type CompletedHistoryView = "completadas" | "eliminadas" | "todas";
 type OwnerFilter = "Todos" | string;
 type StatusFilter = "Todos" | PendingStatus;
 type PriorityFilter = "Todas" | PendingPriority;
+type DropPosition = "before" | "after";
 
 const STATUS_OPTIONS: PendingStatus[] = ["pendiente", "en_proceso", "bloqueado"];
 const PRIORITY_OPTIONS: PendingPriority[] = ["alta", "media", "baja"];
+const GLOBAL_EDITOR_NAMES = ["jorge luis"];
 
 export function ListaPendientesModule({
   user,
@@ -60,7 +65,11 @@ export function ListaPendientesModule({
 }: ListaPendientesModuleProps) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const saveTimersRef = useRef<Record<string, number>>({});
-  const draggedTaskIdRef = useRef<string | null>(null);
+  const dragPointerRef = useRef<{ pointerId: number; sourceId: string } | null>(null);
+  const dragPreviewRef = useRef<{ overId: string | null; position: DropPosition }>({
+    overId: null,
+    position: "after"
+  });
   const [tasks, setTasks] = useState<PendingTask[]>([]);
   const [completedTasks, setCompletedTasks] = useState<CompletedPendingTask[]>([]);
   const [presenceUsers, setPresenceUsers] = useState<PendingPresenceUser[]>([]);
@@ -79,9 +88,15 @@ export function ListaPendientesModule({
     useState<CompletedHistoryView>("completadas");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [dragState, setDragState] = useState<{
+    overId: string | null;
+    position: DropPosition;
+    sourceId: string | null;
+  }>({ overId: null, position: "after", sourceId: null });
   const [, setClock] = useState(0);
 
   const displayName = useMemo(() => getUserDisplayName(user), [user]);
+  const canEditAllTasks = useMemo(() => isGlobalEditor(displayName, user?.email), [displayName, user?.email]);
   const responsibleOptions = useMemo(() => {
     const unique = new Map<string, PendingResponsibleOption>();
     responsables
@@ -118,6 +133,57 @@ export function ListaPendientesModule({
     }
   }, [displayName, newTaskOwner, responsibleNames]);
 
+  const ensureReunionAmadorTask = useCallback(async () => {
+    if (!workspaceId || !user) return;
+
+    const { data: activeRows, error: activeError } = await supabase
+      .from("lista_pendientes")
+      .select("id,subtareas")
+      .eq("workspace_id", workspaceId)
+      .eq("titulo", reunionAmadorTask.titulo)
+      .eq("responsable", "Diego")
+      .limit(1);
+
+    if (activeError) throw activeError;
+
+    if (activeRows?.length) {
+      const current = normalizeSubtasks(activeRows[0].subtareas);
+      const merged = mergeSubtasks(current, reunionAmadorSubtasks);
+      if (merged.length !== current.length) {
+        const { error } = await supabase
+          .from("lista_pendientes")
+          .update({ subtareas: merged, updated_at: new Date().toISOString() })
+          .eq("id", activeRows[0].id)
+          .eq("workspace_id", workspaceId);
+        if (error) throw error;
+      }
+      return;
+    }
+
+    const { data: historyRows, error: historyError } = await supabase
+      .from("lista_pendientes_completadas")
+      .select("id")
+      .eq("workspace_id", workspaceId)
+      .eq("titulo", reunionAmadorTask.titulo)
+      .eq("responsable", "Diego")
+      .limit(1);
+
+    if (historyError) throw historyError;
+    if (historyRows?.length) return;
+
+    const { error } = await supabase.from("lista_pendientes").insert({
+      ...reunionAmadorTask,
+      created_by: user.id,
+      fecha_creacion: new Date().toISOString(),
+      orden: Date.now(),
+      prioridad: "media",
+      tiempo_acumulado_segundos: 0,
+      temporizador_duracion_segundos: 0,
+      workspace_id: workspaceId
+    });
+    if (error) throw error;
+  }, [user, workspaceId]);
+
   const ensureInitialTasks = useCallback(async () => {
     if (!workspaceId || !user) return;
     const { count, error: countError } = await supabase
@@ -135,6 +201,7 @@ export function ListaPendientesModule({
         fecha_creacion: now,
         orden: index,
         prioridad: "media",
+        subtareas: task.subtareas ?? [],
         tiempo_acumulado_segundos: 0,
         temporizador_duracion_segundos: 0,
         workspace_id: workspaceId
@@ -150,6 +217,7 @@ export function ListaPendientesModule({
 
     try {
       await ensureInitialTasks();
+      await ensureReunionAmadorTask();
       const [{ data: activeRows, error: activeError }, { data: historyRows, error: historyError }] =
         await Promise.all([
           supabase
@@ -176,7 +244,7 @@ export function ListaPendientesModule({
     } finally {
       setLoading(false);
     }
-  }, [ensureInitialTasks, user, workspaceId]);
+  }, [ensureInitialTasks, ensureReunionAmadorTask, user, workspaceId]);
 
   useEffect(() => {
     loadPendingData();
@@ -336,6 +404,59 @@ export function ListaPendientesModule({
     }
   }
 
+  function canControlTask(task: PendingTask) {
+    if (canEditAllTasks) return true;
+    if (!task.temporizador_inicio || !task.temporizador_usuario_id) return true;
+    return task.temporizador_usuario_id === user?.id;
+  }
+
+  function getTaskSubtasks(task: PendingTask) {
+    return normalizeSubtasks(task.subtareas);
+  }
+
+  function saveSubtasks(task: PendingTask, subtareas: PendingSubtask[]) {
+    scheduleTaskSave(task.id, { subtareas });
+  }
+
+  function toggleSubtask(task: PendingTask, subtaskId: string) {
+    saveSubtasks(
+      task,
+      getTaskSubtasks(task).map((subtask) =>
+        subtask.id === subtaskId ? { ...subtask, completada: !subtask.completada } : subtask
+      )
+    );
+  }
+
+  function addSubtask(task: PendingTask) {
+    const title = window.prompt("Nuevo sub elemento del checklist");
+    const trimmedTitle = title?.trim();
+    if (!trimmedTitle) return;
+    saveSubtasks(task, [
+      ...getTaskSubtasks(task),
+      {
+        completada: false,
+        id: `subtask-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 8)}`,
+        titulo: trimmedTitle
+      }
+    ]);
+  }
+
+  function deleteSubtask(task: PendingTask, subtaskId: string) {
+    saveSubtasks(
+      task,
+      getTaskSubtasks(task).filter((subtask) => subtask.id !== subtaskId)
+    );
+  }
+
+  function updateSubtaskTitle(task: PendingTask, subtaskId: string, title: string) {
+    saveSubtasks(
+      task,
+      getTaskSubtasks(task).map((subtask) =>
+        subtask.id === subtaskId ? { ...subtask, titulo: title } : subtask
+      )
+    );
+  }
+
   async function handleCreateTask(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!workspaceId || !user || saving) return;
@@ -356,6 +477,7 @@ export function ListaPendientesModule({
       orden: nextOrder,
       prioridad: newTaskPriority,
       responsable: newTaskOwner || responsibleNames[0] || null,
+      subtareas: [],
       tiempo_acumulado_segundos: 0,
       temporizador_duracion_segundos: durationFromDates(
         newTaskStartDate,
@@ -384,7 +506,8 @@ export function ListaPendientesModule({
     if (
       task.temporizador_inicio &&
       task.temporizador_usuario_id &&
-      task.temporizador_usuario_id !== user.id
+      task.temporizador_usuario_id !== user.id &&
+      !canEditAllTasks
     ) {
       setErrorMessage(`${task.temporizador_usuario_nombre || "Otro usuario"} está trabajando esta tarea.`);
       return;
@@ -456,6 +579,7 @@ export function ListaPendientesModule({
         original_task_id: task.id,
         prioridad: task.prioridad,
         responsable: task.responsable,
+        subtareas: getTaskSubtasks(task),
         tiempo_total_segundos: totalSeconds,
         titulo: task.titulo,
         usuario_accion_id: user.id,
@@ -494,6 +618,7 @@ export function ListaPendientesModule({
       orden: nextOrder,
       prioridad: task.prioridad,
       responsable: task.responsable,
+      subtareas: task.subtareas,
       tiempo_acumulado_segundos: task.tiempo_total_segundos,
       temporizador_duracion_segundos: Math.max(
         task.tiempo_total_segundos,
@@ -521,14 +646,15 @@ export function ListaPendientesModule({
     loadPendingData();
   }
 
-  async function reorderTask(sourceId: string, targetId: string) {
+  async function reorderTask(sourceId: string, targetId: string, position: DropPosition = "before") {
     if (sourceId === targetId) return;
     const current = [...tasks];
     const sourceIndex = current.findIndex((task) => task.id === sourceId);
     const targetIndex = current.findIndex((task) => task.id === targetId);
     if (sourceIndex < 0 || targetIndex < 0) return;
     const [moved] = current.splice(sourceIndex, 1);
-    current.splice(targetIndex, 0, moved);
+    const adjustedTargetIndex = current.findIndex((task) => task.id === targetId);
+    current.splice(position === "after" ? adjustedTargetIndex + 1 : adjustedTargetIndex, 0, moved);
     const reordered = current.map((task, index) => ({ ...task, orden: index }));
     setTasks(reordered);
     const results = await Promise.all(
@@ -544,6 +670,68 @@ export function ListaPendientesModule({
     if (failed?.error) {
       setErrorMessage(`No se pudo guardar el nuevo orden: ${getErrorMessage(failed.error)}`);
       loadPendingData();
+    }
+  }
+
+  function beginTaskDrag(task: PendingTask, event: ReactPointerEvent<HTMLButtonElement>) {
+    if (!canControlTask(task)) return;
+    dragPointerRef.current = { pointerId: event.pointerId, sourceId: task.id };
+    dragPreviewRef.current = { overId: task.id, position: "after" };
+    setDragState({ overId: task.id, position: "after", sourceId: task.id });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    updatePresence(task);
+    event.preventDefault();
+  }
+
+  function updateTaskDragPreview(taskId: string, event: ReactPointerEvent<HTMLElement>) {
+    const current = dragPointerRef.current;
+    if (!current || current.sourceId === taskId) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    const position: DropPosition = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    const next = { overId: taskId, position };
+    if (
+      dragPreviewRef.current.overId !== next.overId ||
+      dragPreviewRef.current.position !== next.position
+    ) {
+      dragPreviewRef.current = next;
+      setDragState({ ...next, sourceId: current.sourceId });
+    }
+  }
+
+  function moveTaskDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const current = dragPointerRef.current;
+    if (!current) return;
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>("[data-pending-task-id]");
+    const targetId = target?.dataset.pendingTaskId;
+    if (!target || !targetId || targetId === current.sourceId) return;
+
+    const rect = target.getBoundingClientRect();
+    const position: DropPosition = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    const next = { overId: targetId, position };
+    if (
+      dragPreviewRef.current.overId !== next.overId ||
+      dragPreviewRef.current.position !== next.position
+    ) {
+      dragPreviewRef.current = next;
+      setDragState({ ...next, sourceId: current.sourceId });
+    }
+  }
+
+  function finishTaskDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const current = dragPointerRef.current;
+    if (!current) return;
+    const preview = dragPreviewRef.current;
+    dragPointerRef.current = null;
+    dragPreviewRef.current = { overId: null, position: "after" };
+    setDragState({ overId: null, position: "after", sourceId: null });
+    updatePresence(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (preview.overId && preview.overId !== current.sourceId) {
+      void reorderTask(current.sourceId, preview.overId, preview.position);
     }
   }
 
@@ -706,38 +894,39 @@ export function ListaPendientesModule({
                 Pendientes de {group.owner}
               </h4>
               {group.tasks.map((task) => {
-                const lockedByOther = Boolean(
-                  task.temporizador_inicio &&
-                    task.temporizador_usuario_id &&
-                    task.temporizador_usuario_id !== user?.id
-                );
+                const lockedByOther = !canControlTask(task);
                 const ownedTimer = Boolean(
                   task.temporizador_inicio && task.temporizador_usuario_id === user?.id
                 );
+                const subtasks = getTaskSubtasks(task);
+                const completedSubtasks = subtasks.filter((subtask) => subtask.completada).length;
+                const isDragSource = dragState.sourceId === task.id;
+                const isDropTarget = dragState.overId === task.id && dragState.sourceId !== task.id;
                 return (
                   <article
                     key={task.id}
-                    draggable={!lockedByOther}
-                    onDragStart={() => {
-                      draggedTaskIdRef.current = task.id;
-                      updatePresence(task);
-                    }}
-                    onDragEnd={() => {
-                      draggedTaskIdRef.current = null;
-                      updatePresence(null);
-                    }}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={() => {
-                      const sourceId = draggedTaskIdRef.current;
-                      if (sourceId) void reorderTask(sourceId, task.id);
-                    }}
+                    data-pending-task-id={task.id}
+                    onPointerMove={(event) => updateTaskDragPreview(task.id, event)}
                     className={`relative grid gap-3 border-b border-slate-200 px-4 py-4 last:border-b-0 lg:grid-cols-[34px_minmax(0,1fr)_minmax(590px,auto)] lg:items-center ${
                       ownedTimer ? "bg-rose-50/40 shadow-[inset_3px_0_0_#e11d48]" : ""
+                    } ${isDragSource ? "opacity-60" : ""} ${
+                      isDropTarget ? "bg-blue-50/50" : ""
                     }`}
                   >
+                    {isDropTarget ? (
+                      <span
+                        className={`pointer-events-none absolute left-4 right-4 h-1 rounded-full bg-blue-500 ${
+                          dragState.position === "before" ? "top-0" : "bottom-0"
+                        }`}
+                      />
+                    ) : null}
                     <button
                       type="button"
-                      className="grid h-8 w-8 place-items-center rounded-lg border border-slate-200 bg-white text-slate-400"
+                      onPointerDown={(event) => beginTaskDrag(task, event)}
+                      onPointerMove={moveTaskDrag}
+                      onPointerUp={finishTaskDrag}
+                      onPointerCancel={finishTaskDrag}
+                      className="grid h-8 w-8 touch-none place-items-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
                       aria-label="Mover tarea"
                       disabled={lockedByOther}
                     >
@@ -776,6 +965,64 @@ export function ListaPendientesModule({
                         </button>
                       )}
 
+                      {subtasks.length ? (
+                        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50/70 p-3">
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <span className="text-[11px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                              Checklist
+                            </span>
+                            <span className="rounded-full bg-white px-2 py-1 text-[11px] font-bold text-slate-500">
+                              {completedSubtasks}/{subtasks.length}
+                            </span>
+                          </div>
+                          <div className="grid gap-1.5">
+                            {subtasks.map((subtask) => (
+                              <label
+                                key={subtask.id}
+                                className="group flex items-center gap-2 rounded-md px-1 py-1 text-sm text-slate-700 hover:bg-white"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={subtask.completada}
+                                  disabled={lockedByOther}
+                                  onChange={() => toggleSubtask(task, subtask.id)}
+                                  className="h-4 w-4 rounded border-slate-300 text-blue-600"
+                                />
+                                <input
+                                  value={subtask.titulo}
+                                  disabled={lockedByOther}
+                                  onChange={(event) =>
+                                    updateSubtaskTitle(task, subtask.id, event.target.value)
+                                  }
+                                  className={`min-w-0 flex-1 bg-transparent outline-none ${
+                                    subtask.completada ? "text-slate-400 line-through" : ""
+                                  }`}
+                                />
+                                {!lockedByOther ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => deleteSubtask(task, subtask.id)}
+                                    className="hidden rounded px-2 py-1 text-xs font-bold text-slate-400 hover:bg-red-50 hover:text-red-600 group-hover:block"
+                                    aria-label="Eliminar sub elemento"
+                                  >
+                                    ×
+                                  </button>
+                                ) : null}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+
+                      {!lockedByOther ? (
+                        <button
+                          type="button"
+                          onClick={() => addSubtask(task)}
+                          className="mt-2 text-xs font-bold text-blue-600 hover:text-blue-700"
+                        >
+                          + Agregar sub elemento
+                        </button>
+                      ) : null}
                     </div>
 
                     <div className="grid min-w-0 gap-2">
@@ -1113,7 +1360,8 @@ function normalizeTask(raw: Record<string, unknown>): PendingTask {
     temporizador_duracion_segundos: Number(raw.temporizador_duracion_segundos || 0),
     temporizador_inicio: typeof raw.temporizador_inicio === "string" ? raw.temporizador_inicio : null,
     temporizador_usuario_id: typeof raw.temporizador_usuario_id === "string" ? raw.temporizador_usuario_id : null,
-    temporizador_usuario_nombre: typeof raw.temporizador_usuario_nombre === "string" ? raw.temporizador_usuario_nombre : null
+    temporizador_usuario_nombre: typeof raw.temporizador_usuario_nombre === "string" ? raw.temporizador_usuario_nombre : null,
+    subtareas: normalizeSubtasks(raw.subtareas)
   };
 }
 
@@ -1123,8 +1371,40 @@ function normalizeCompletedTask(raw: Record<string, unknown>): CompletedPendingT
     fecha_fin: typeof raw.fecha_fin === "string" ? raw.fecha_fin : null,
     fecha_inicio: typeof raw.fecha_inicio === "string" ? raw.fecha_inicio : null,
     prioridad: (raw.prioridad as PendingPriority) || "media",
-    tiempo_total_segundos: Number(raw.tiempo_total_segundos || 0)
+    tiempo_total_segundos: Number(raw.tiempo_total_segundos || 0),
+    subtareas: normalizeSubtasks(raw.subtareas)
   };
+}
+
+function normalizeSubtasks(value: unknown): PendingSubtask[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item, index) => {
+      if (!item || typeof item !== "object") return null;
+      const source = item as Record<string, unknown>;
+      const titulo = typeof source.titulo === "string" ? source.titulo.trim() : "";
+      if (!titulo) return null;
+      return {
+        completada: Boolean(source.completada),
+        id:
+          typeof source.id === "string" && source.id.trim()
+            ? source.id
+            : `subtask-${index + 1}`,
+        titulo
+      };
+    })
+    .filter((item): item is PendingSubtask => Boolean(item));
+}
+
+function mergeSubtasks(current: PendingSubtask[], incoming: PendingSubtask[]) {
+  const existingTitles = new Set(current.map((subtask) => normalizeText(subtask.titulo)));
+  const merged = [...current];
+  incoming.forEach((subtask) => {
+    if (!existingTitles.has(normalizeText(subtask.titulo))) {
+      merged.push(subtask);
+    }
+  });
+  return merged;
 }
 
 function elapsedCurrentSession(task: PendingTask) {
@@ -1275,6 +1555,13 @@ function matchesKnownUser(presenceUser: PendingPresenceUser, knownName: string) 
 
 function normalizeText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function isGlobalEditor(name: string, email?: string | null) {
+  const normalizedName = normalizeText(name);
+  const normalizedEmail = normalizeText(email ?? "");
+  return GLOBAL_EDITOR_NAMES.some((editor) => normalizedName.includes(editor)) ||
+    normalizedEmail.includes("jorgeluis");
 }
 
 function toDatabaseDateTime(value: string) {

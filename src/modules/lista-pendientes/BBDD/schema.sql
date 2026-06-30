@@ -14,6 +14,7 @@ create table if not exists public.lista_pendientes (
   temporizador_inicio timestamptz,
   temporizador_usuario_id uuid references auth.users(id) on delete set null,
   temporizador_usuario_nombre text,
+  subtareas jsonb not null default '[]'::jsonb,
   created_by uuid references auth.users(id) on delete set null,
   updated_at timestamptz not null default now()
 );
@@ -27,7 +28,8 @@ begin
     add column if not exists temporizador_duracion_segundos bigint not null default 0,
     add column if not exists temporizador_inicio timestamptz,
     add column if not exists temporizador_usuario_id uuid references auth.users(id) on delete set null,
-    add column if not exists temporizador_usuario_nombre text;
+    add column if not exists temporizador_usuario_nombre text,
+    add column if not exists subtareas jsonb not null default '[]'::jsonb;
 
   alter table public.lista_pendientes drop constraint if exists lista_pendientes_estado_check;
   alter table public.lista_pendientes
@@ -80,14 +82,16 @@ create table if not exists public.lista_pendientes_completadas (
   prioridad text not null default 'media',
   fecha_inicio timestamptz,
   fecha_fin timestamptz,
-  tiempo_total_segundos bigint not null default 0
+  tiempo_total_segundos bigint not null default 0,
+  subtareas jsonb not null default '[]'::jsonb
 );
 
 alter table public.lista_pendientes_completadas
   add column if not exists prioridad text not null default 'media',
   add column if not exists fecha_inicio timestamptz,
   add column if not exists fecha_fin timestamptz,
-  add column if not exists tiempo_total_segundos bigint not null default 0;
+  add column if not exists tiempo_total_segundos bigint not null default 0,
+  add column if not exists subtareas jsonb not null default '[]'::jsonb;
 
 alter table public.lista_pendientes_completadas
   drop constraint if exists lista_pendientes_completadas_prioridad_check;

@@ -4,6 +4,12 @@ export type PendingPriority = "alta" | "media" | "baja";
 
 export type CompletedPendingAction = "completada" | "eliminada";
 
+export interface PendingSubtask {
+  id: string;
+  titulo: string;
+  completada: boolean;
+}
+
 export interface PendingResponsibleOption {
   email?: string;
   nombre: string;
@@ -26,6 +32,7 @@ export interface PendingTask {
   temporizador_inicio: string | null;
   temporizador_usuario_id: string | null;
   temporizador_usuario_nombre: string | null;
+  subtareas: PendingSubtask[];
   created_by: string | null;
   updated_at: string | null;
 }
@@ -45,6 +52,7 @@ export interface CompletedPendingTask {
   fecha_inicio: string | null;
   fecha_fin: string | null;
   tiempo_total_segundos: number;
+  subtareas: PendingSubtask[];
 }
 
 export interface PendingPresenceUser {

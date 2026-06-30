@@ -5,7 +5,29 @@ export const connectedUsersToShow = ["Jorge Luis", "Diego"];
 type InitialPendingTask = Pick<
   PendingTask,
   "titulo" | "responsable" | "estado" | "fecha_inicio" | "fecha_fin"
->;
+> &
+  Partial<Pick<PendingTask, "subtareas">>;
+
+export const reunionAmadorSubtasks = [
+  "Enviar los presupuestos destinados para el mes de julio.",
+  "Activar la campaña de almuerzos (mañana).",
+  "Añadir los públicos de BCP a la campaña si los comparten.",
+  "Crear una nueva cuenta de GA4 y compartir los accesos correspondientes.",
+  "Actualizar la campaña con la nueva pieza de relatos."
+].map((titulo, index) => ({
+  completada: false,
+  id: `reunion-amador-${index + 1}`,
+  titulo
+}));
+
+export const reunionAmadorTask: InitialPendingTask = {
+  estado: "pendiente",
+  fecha_fin: null,
+  fecha_inicio: null,
+  responsable: "Diego",
+  subtareas: reunionAmadorSubtasks,
+  titulo: "Reunión Amador"
+};
 
 export const legacyJorgeLuisPendingTitles = [
   "Actualización de cuentas y contenidos de los muros para todas las marcas.",
@@ -86,9 +108,10 @@ export const jorgeLuisPendingTasks: InitialPendingTask[] = [
 ];
 
 export const initialPendingTasks: Array<
-  Pick<PendingTask, "titulo" | "responsable" | "estado" | "fecha_inicio" | "fecha_fin">
+  InitialPendingTask
 > = [
   ...jorgeLuisPendingTasks,
+  reunionAmadorTask,
   {
     titulo: "Llanos Import: actualización de conjuntos y anuncios completos con las piezas enviadas.",
     responsable: "Diego",
