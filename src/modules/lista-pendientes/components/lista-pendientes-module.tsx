@@ -146,9 +146,7 @@ export function ListaPendientesModule({
 
     if (activeError) throw activeError;
 
-    const existingActiveTask = activeRows?.find(
-      (task) => normalizeText(task.titulo) === normalizeText(reunionAmadorTask.titulo)
-    );
+    const existingActiveTask = activeRows?.find((task) => isAmadorSeedTask(task.titulo));
 
     if (existingActiveTask) {
       const current = normalizeSubtasks(existingActiveTask.subtareas);
@@ -167,6 +165,19 @@ export function ListaPendientesModule({
       }
       return;
     }
+
+    const { data: completedRows, error: completedError } = await supabase
+      .from("lista_pendientes_completadas")
+      .select("id,titulo")
+      .eq("workspace_id", workspaceId)
+      .eq("responsable", "Diego")
+      .order("fecha_finalizacion", { ascending: false })
+      .limit(50);
+
+    if (completedError) throw completedError;
+
+    const existingCompletedTask = completedRows?.some((task) => isAmadorSeedTask(task.titulo));
+    if (existingCompletedTask) return;
 
     const { error } = await supabase.from("lista_pendientes").insert({
       ...reunionAmadorTask,
@@ -560,9 +571,34 @@ export function ListaPendientesModule({
     action: CompletedPendingAction
   ) {
     if (!workspaceId || !user || saving) return;
+    window.clearTimeout(saveTimersRef.current[task.id]);
     setSaving(true);
     setErrorMessage("");
 
+    try {
+      const { error: rpcError } = await supabase.rpc("complete_pending_task", {
+        actor_name: displayName,
+        task_action: action,
+        task_id: task.id
+      });
+
+      if (rpcError && !isMissingRpcError(rpcError)) throw rpcError;
+      if (rpcError) await moveTaskToCompletedDirectly(task, action);
+
+      setTasks((current) => current.filter((item) => item.id !== task.id));
+      await loadPendingData();
+    } catch (error) {
+      setErrorMessage(`No se pudo completar la tarea: ${getErrorMessage(error)}`);
+      await loadPendingData();
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function moveTaskToCompletedDirectly(
+    task: PendingTask,
+    action: CompletedPendingAction
+  ) {
     const currentElapsed = task.temporizador_inicio ? elapsedCurrentSession(task) : 0;
     const totalSeconds = task.tiempo_acumulado_segundos + currentElapsed;
     const { error: insertError } = await supabase
@@ -579,27 +615,23 @@ export function ListaPendientesModule({
         subtareas: getTaskSubtasks(task),
         tiempo_total_segundos: totalSeconds,
         titulo: task.titulo,
-        usuario_accion_id: user.id,
+        usuario_accion_id: user?.id ?? null,
         usuario_accion_nombre: displayName,
         workspace_id: workspaceId
-      });
+      })
+      .select("id")
+      .single();
 
-    if (insertError) {
-      setErrorMessage(`No se pudo archivar la tarea: ${getErrorMessage(insertError)}`);
-      setSaving(false);
-      return;
-    }
+    if (insertError) throw insertError;
 
     const { error: deleteError } = await supabase
       .from("lista_pendientes")
       .delete()
       .eq("id", task.id)
-      .eq("workspace_id", workspaceId);
-    if (deleteError) {
-      setErrorMessage(`La tarea se archivó, pero no se retiró del tablero: ${getErrorMessage(deleteError)}`);
-    }
-    setSaving(false);
-    loadPendingData();
+      .eq("workspace_id", workspaceId)
+      .select("id")
+      .single();
+    if (deleteError) throw deleteError;
   }
 
   async function restoreCompletedTask(task: CompletedPendingTask) {
@@ -1115,9 +1147,9 @@ export function ListaPendientesModule({
                       </div>
                       <button
                         type="button"
-                        disabled={lockedByOther || saving}
+                        disabled={saving}
                         onClick={() => void moveTaskToCompleted(task, "completada")}
-                        className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold hover:bg-slate-50 disabled:text-slate-300"
+                        className="relative z-20 h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold hover:bg-slate-50 disabled:text-slate-300"
                       >
                         Terminar
                       </button>
@@ -1137,7 +1169,7 @@ export function ListaPendientesModule({
                     </div>
 
                     {lockedByOther ? (
-                      <div className="absolute inset-0 z-10 flex items-center justify-end gap-4 bg-slate-100/75 px-6 backdrop-blur-[1px]">
+                      <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-end gap-4 bg-slate-100/75 px-6 backdrop-blur-[1px]">
                         <div className="rounded-lg border border-slate-200 bg-white/90 px-4 py-2 text-right shadow-sm">
                           <p className="text-sm font-bold">
                             {task.temporizador_usuario_nombre || "Otro usuario"} está trabajando esta tarea
@@ -1564,11 +1596,24 @@ function normalizeText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+function isAmadorSeedTask(title: string) {
+  const normalizedTitle = normalizeText(title);
+  return normalizedTitle.includes("amador") &&
+    (normalizedTitle.includes("reunion") || normalizedTitle.includes("script"));
+}
+
 function isGlobalEditor(name: string, email?: string | null) {
   const normalizedName = normalizeText(name);
   const normalizedEmail = normalizeText(email ?? "");
   return GLOBAL_EDITOR_NAMES.some((editor) => normalizedName.includes(editor)) ||
     normalizedEmail.includes("jorgeluis");
+}
+
+function isMissingRpcError(error: unknown) {
+  if (typeof error !== "object" || !error) return false;
+  const code = "code" in error ? String((error as { code?: unknown }).code) : "";
+  const message = "message" in error ? String((error as { message?: unknown }).message) : "";
+  return code === "42883" || code === "PGRST202" || message.includes("complete_pending_task");
 }
 
 function toDatabaseDateTime(value: string) {

@@ -9,6 +9,7 @@ Esta carpeta concentra los datos y el modelo del modulo de pendientes.
 - `initial-data.json`: tareas iniciales del modulo.
 - `schedule-jorge-luis-2026-06-15.sql`: migracion de fechas y horas para la semana del 15 al 19 de junio de 2026.
 - `completed-history-archive.sql`: archivo append-only del historial y recuperacion del snapshot compartido.
+- `complete-pending-task-rpc.sql`: funcion atomica para que cualquier miembro activo del workspace complete o elimine pendientes sin depender del creador.
 
 ## Tablas
 
