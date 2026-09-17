@@ -762,7 +762,20 @@ export function ListaPendientesModule({
         ordered_task_ids: orderedIds,
         target_workspace_id: workspaceId
       });
-      if (error) throw error;
+      if (error && !isMissingRpcError(error)) throw error;
+      if (error) {
+        const results = await Promise.all(
+          orderedIds.map((taskId, index) =>
+            supabase
+              .from("lista_pendientes")
+              .update({ orden: index, updated_at: new Date().toISOString() })
+              .eq("id", taskId)
+              .eq("workspace_id", workspaceId)
+          )
+        );
+        const failed = results.find((result) => result.error);
+        if (failed?.error) throw failed.error;
+      }
     } catch (error) {
       sync.pending = false;
       setErrorMessage(
@@ -782,6 +795,17 @@ export function ListaPendientesModule({
         scheduleRealtimeReload();
       }
     }
+  }
+
+  function moveTaskByStep(taskId: string, orderedGroupIds: string[], direction: -1 | 1) {
+    const sourceIndex = orderedGroupIds.indexOf(taskId);
+    const targetIndex = sourceIndex + direction;
+    if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= orderedGroupIds.length) return;
+    reorderTask(
+      taskId,
+      orderedGroupIds[targetIndex],
+      direction < 0 ? "before" : "after"
+    );
   }
 
   function beginTaskDrag(task: PendingTask, event: ReactPointerEvent<HTMLButtonElement>) {
@@ -1004,7 +1028,7 @@ export function ListaPendientesModule({
               <h4 className="border-b border-slate-200 bg-slate-50 px-5 py-3 text-xs font-extrabold uppercase tracking-[0.14em] text-slate-600">
                 Pendientes de {group.owner}
               </h4>
-              {group.tasks.map((task) => {
+              {group.tasks.map((task, taskIndex) => {
                 const lockedByOther = !canControlTask(task);
                 const ownedTimer = Boolean(
                   task.temporizador_inicio && task.temporizador_usuario_id === user?.id
@@ -1018,7 +1042,7 @@ export function ListaPendientesModule({
                     key={task.id}
                     data-pending-task-id={task.id}
                     onPointerMove={(event) => updateTaskDragPreview(task.id, event)}
-                    className={`relative grid gap-3 border-b border-slate-200 px-4 py-4 last:border-b-0 lg:grid-cols-[34px_minmax(0,1fr)_minmax(590px,auto)] lg:items-center ${
+                    className={`relative grid gap-3 border-b border-slate-200 px-4 py-4 last:border-b-0 lg:grid-cols-[58px_minmax(0,1fr)_minmax(590px,auto)] lg:items-center ${
                       ownedTimer ? "bg-rose-50/40 shadow-[inset_3px_0_0_#e11d48]" : ""
                     } ${isDragSource ? "opacity-60" : ""} ${
                       isDropTarget ? "bg-blue-50/50" : ""
@@ -1031,18 +1055,47 @@ export function ListaPendientesModule({
                         }`}
                       />
                     ) : null}
-                    <button
-                      type="button"
-                      onPointerDown={(event) => beginTaskDrag(task, event)}
-                      onPointerMove={moveTaskDrag}
-                      onPointerUp={finishTaskDrag}
-                      onPointerCancel={finishTaskDrag}
-                      className="grid h-8 w-8 touch-none place-items-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
-                      aria-label="Mover tarea"
-                      disabled={lockedByOther}
-                    >
-                      <GripIcon />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onPointerDown={(event) => beginTaskDrag(task, event)}
+                        onPointerMove={moveTaskDrag}
+                        onPointerUp={finishTaskDrag}
+                        onPointerCancel={finishTaskDrag}
+                        className="grid h-8 w-8 touch-none place-items-center rounded-lg border border-slate-200 bg-white text-slate-400 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-40"
+                        aria-label="Arrastrar tarea"
+                        title="Arrastrar para cambiar el orden"
+                        disabled={lockedByOther}
+                      >
+                        <GripIcon />
+                      </button>
+                      <span className="grid gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            moveTaskByStep(task.id, group.tasks.map((item) => item.id), -1)
+                          }
+                          disabled={lockedByOther || taskIndex === 0}
+                          className="grid h-4 w-4 place-items-center rounded text-slate-400 transition hover:bg-blue-100 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-25"
+                          aria-label={`Subir ${task.titulo}`}
+                          title="Subir"
+                        >
+                          <OrderArrowIcon direction="up" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            moveTaskByStep(task.id, group.tasks.map((item) => item.id), 1)
+                          }
+                          disabled={lockedByOther || taskIndex === group.tasks.length - 1}
+                          className="grid h-4 w-4 place-items-center rounded text-slate-400 transition hover:bg-blue-100 hover:text-blue-700 disabled:cursor-not-allowed disabled:opacity-25"
+                          aria-label={`Bajar ${task.titulo}`}
+                          title="Bajar"
+                        >
+                          <OrderArrowIcon direction="down" />
+                        </button>
+                      </span>
+                    </div>
 
                     <div className="min-w-0">
                       {editingTaskId === task.id ? (
@@ -1676,6 +1729,14 @@ function matchesKnownUser(presenceUser: PendingPresenceUser, knownName: string) 
 
 function normalizeText(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function OrderArrowIcon({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d={direction === "up" ? "M3 9l4-4 4 4" : "M3 5l4 4 4-4"} />
+    </svg>
+  );
 }
 
 function isAmadorSeedTask(title: string) {
