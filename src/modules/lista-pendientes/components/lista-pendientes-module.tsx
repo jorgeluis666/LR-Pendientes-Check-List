@@ -57,6 +57,9 @@ type DropPosition = "before" | "after";
 const STATUS_OPTIONS: PendingStatus[] = ["pendiente", "en_proceso", "bloqueado"];
 const PRIORITY_OPTIONS: PendingPriority[] = ["alta", "media", "baja"];
 const GLOBAL_EDITOR_NAMES = ["jorge luis"];
+const TASK_SAVE_DELAY_MS = 900;
+const REALTIME_RELOAD_DELAY_MS = 1200;
+const MAX_HISTORY_ROWS = 250;
 
 export function ListaPendientesModule({
   user,
@@ -65,6 +68,15 @@ export function ListaPendientesModule({
 }: ListaPendientesModuleProps) {
   const channelRef = useRef<RealtimeChannel | null>(null);
   const saveTimersRef = useRef<Record<string, number>>({});
+  const pendingTaskPatchesRef = useRef<Record<string, PendingTaskPatch>>({});
+  const reorderTimerRef = useRef<number | null>(null);
+  const realtimeReloadTimerRef = useRef<number | null>(null);
+  const reorderSyncRef = useRef({
+    orderedIds: [] as string[],
+    pending: false,
+    revision: 0,
+    saving: false
+  });
   const dragPointerRef = useRef<{ pointerId: number; sourceId: string } | null>(null);
   const dragPreviewRef = useRef<{ overId: string | null; position: DropPosition }>({
     overId: null,
@@ -239,6 +251,7 @@ export function ListaPendientesModule({
             .select("*")
             .eq("workspace_id", workspaceId)
             .order("fecha_finalizacion", { ascending: false })
+            .limit(MAX_HISTORY_ROWS)
         ]);
 
       if (activeError) throw activeError;
@@ -254,9 +267,33 @@ export function ListaPendientesModule({
     }
   }, [ensureInitialTasks, ensureReunionAmadorTask, user, workspaceId]);
 
+  const scheduleRealtimeReload = useCallback(() => {
+    if (realtimeReloadTimerRef.current !== null) {
+      window.clearTimeout(realtimeReloadTimerRef.current);
+    }
+    realtimeReloadTimerRef.current = window.setTimeout(() => {
+      if (reorderSyncRef.current.pending || reorderSyncRef.current.saving) {
+        scheduleRealtimeReload();
+        return;
+      }
+      void loadPendingData();
+    }, REALTIME_RELOAD_DELAY_MS);
+  }, [loadPendingData]);
+
   useEffect(() => {
     loadPendingData();
   }, [loadPendingData]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(saveTimersRef.current).forEach((timer) => window.clearTimeout(timer));
+      saveTimersRef.current = {};
+      pendingTaskPatchesRef.current = {};
+      if (reorderTimerRef.current !== null) window.clearTimeout(reorderTimerRef.current);
+      if (realtimeReloadTimerRef.current !== null) window.clearTimeout(realtimeReloadTimerRef.current);
+      reorderSyncRef.current = { orderedIds: [], pending: false, revision: 0, saving: false };
+    };
+  }, [workspaceId]);
 
   useEffect(() => {
     if (!tasks.some((task) => task.temporizador_inicio)) return undefined;
@@ -291,7 +328,7 @@ export function ListaPendientesModule({
           schema: "public",
           table: "lista_pendientes"
         },
-        () => loadPendingData()
+        scheduleRealtimeReload
       )
       .on(
         "postgres_changes",
@@ -301,7 +338,7 @@ export function ListaPendientesModule({
           schema: "public",
           table: "lista_pendientes_completadas"
         },
-        () => loadPendingData()
+        scheduleRealtimeReload
       )
       .on("presence", { event: "sync" }, () => setPresenceUsers(readPresenceUsers(channel)))
       .subscribe((status) => {
@@ -315,7 +352,7 @@ export function ListaPendientesModule({
       supabase.removeChannel(channel);
       channelRef.current = null;
     };
-  }, [displayName, loadPendingData, user, workspaceId]);
+  }, [displayName, scheduleRealtimeReload, user, workspaceId]);
 
   const connectedStatus = useMemo(
     () =>
@@ -394,10 +431,17 @@ export function ListaPendientesModule({
 
   function scheduleTaskSave(taskId: string, patch: PendingTaskPatch) {
     updateTaskLocal(taskId, patch);
+    pendingTaskPatchesRef.current[taskId] = {
+      ...pendingTaskPatchesRef.current[taskId],
+      ...patch
+    };
     window.clearTimeout(saveTimersRef.current[taskId]);
     saveTimersRef.current[taskId] = window.setTimeout(() => {
-      void saveTaskPatch(taskId, patch);
-    }, 300);
+      delete saveTimersRef.current[taskId];
+      const consolidatedPatch = pendingTaskPatchesRef.current[taskId] ?? patch;
+      delete pendingTaskPatchesRef.current[taskId];
+      void saveTaskPatch(taskId, consolidatedPatch);
+    }, TASK_SAVE_DELAY_MS);
   }
 
   async function saveTaskPatch(taskId: string, patch: PendingTaskPatch) {
@@ -572,6 +616,8 @@ export function ListaPendientesModule({
   ) {
     if (!workspaceId || !user || saving) return;
     window.clearTimeout(saveTimersRef.current[task.id]);
+    delete saveTimersRef.current[task.id];
+    delete pendingTaskPatchesRef.current[task.id];
     setSaving(true);
     setErrorMessage("");
 
@@ -675,30 +721,66 @@ export function ListaPendientesModule({
     loadPendingData();
   }
 
-  async function reorderTask(sourceId: string, targetId: string, position: DropPosition = "before") {
+  function reorderTask(sourceId: string, targetId: string, position: DropPosition = "before") {
     if (sourceId === targetId) return;
-    const current = [...tasks];
-    const sourceIndex = current.findIndex((task) => task.id === sourceId);
-    const targetIndex = current.findIndex((task) => task.id === targetId);
-    if (sourceIndex < 0 || targetIndex < 0) return;
-    const [moved] = current.splice(sourceIndex, 1);
-    const adjustedTargetIndex = current.findIndex((task) => task.id === targetId);
-    current.splice(position === "after" ? adjustedTargetIndex + 1 : adjustedTargetIndex, 0, moved);
-    const reordered = current.map((task, index) => ({ ...task, orden: index }));
-    setTasks(reordered);
-    const results = await Promise.all(
-      reordered.map((task) =>
-        supabase
-          .from("lista_pendientes")
-          .update({ orden: task.orden, updated_at: new Date().toISOString() })
-          .eq("id", task.id)
-          .eq("workspace_id", workspaceId)
-      )
-    );
-    const failed = results.find((result) => result.error);
-    if (failed?.error) {
-      setErrorMessage(`No se pudo guardar el nuevo orden: ${getErrorMessage(failed.error)}`);
-      loadPendingData();
+    setTasks((currentTasks) => {
+      const current = [...currentTasks];
+      const sourceIndex = current.findIndex((task) => task.id === sourceId);
+      const targetIndex = current.findIndex((task) => task.id === targetId);
+      if (sourceIndex < 0 || targetIndex < 0) return currentTasks;
+      const [moved] = current.splice(sourceIndex, 1);
+      const adjustedTargetIndex = current.findIndex((task) => task.id === targetId);
+      current.splice(position === "after" ? adjustedTargetIndex + 1 : adjustedTargetIndex, 0, moved);
+      const reordered = current.map((task, index) => ({ ...task, orden: index }));
+      queueOrderPersistence(reordered.map((task) => task.id));
+      return reordered;
+    });
+  }
+
+  function queueOrderPersistence(orderedIds: string[]) {
+    reorderSyncRef.current.orderedIds = orderedIds;
+    reorderSyncRef.current.revision += 1;
+    reorderSyncRef.current.pending = true;
+    if (reorderTimerRef.current !== null) window.clearTimeout(reorderTimerRef.current);
+    reorderTimerRef.current = window.setTimeout(() => {
+      reorderTimerRef.current = null;
+      void flushOrderPersistence();
+    }, 500);
+  }
+
+  async function flushOrderPersistence() {
+    const sync = reorderSyncRef.current;
+    if (sync.saving || !sync.pending || !sync.orderedIds.length) return;
+    const revision = sync.revision;
+    const orderedIds = [...sync.orderedIds];
+    sync.saving = true;
+    sync.pending = false;
+    setErrorMessage("");
+
+    try {
+      const { error } = await supabase.rpc("reorder_pending_tasks", {
+        ordered_task_ids: orderedIds,
+        target_workspace_id: workspaceId
+      });
+      if (error) throw error;
+    } catch (error) {
+      sync.pending = false;
+      setErrorMessage(
+        `No se pudo guardar el nuevo orden. Ejecuta el schema actualizado de Supabase. Detalle: ${getErrorMessage(error)}`
+      );
+      await loadPendingData();
+    } finally {
+      sync.saving = false;
+      if (sync.revision !== revision || sync.pending) {
+        sync.pending = true;
+        if (reorderTimerRef.current !== null) window.clearTimeout(reorderTimerRef.current);
+        reorderTimerRef.current = window.setTimeout(() => {
+          reorderTimerRef.current = null;
+          void flushOrderPersistence();
+        }, 150);
+      } else {
+        scheduleRealtimeReload();
+      }
     }
   }
 
@@ -760,7 +842,7 @@ export function ListaPendientesModule({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
     if (preview.overId && preview.overId !== current.sourceId) {
-      void reorderTask(current.sourceId, preview.overId, preview.position);
+      reorderTask(current.sourceId, preview.overId, preview.position);
     }
   }
 

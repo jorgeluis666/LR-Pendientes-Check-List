@@ -1,9 +1,10 @@
 ﻿# LR Pendientes
 
-Version publica de LR Suite enfocada en dos modulos:
+Version publica de LR Suite enfocada en tres modulos:
 
 - Pendientes colaborativos por workspace.
 - Usuarios, invitaciones y roles por workspace.
+- Contactabilidad con clientes sincronizados desde Google Sheets.
 
 ## Configuracion
 
@@ -15,7 +16,7 @@ NEXT_PUBLIC_SUPABASE_URL=tu_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
 ```
 
-3. En Supabase ejecuta primero `src/modules/usuarios/BBDD/schema.sql` y luego `src/modules/lista-pendientes/BBDD/schema.sql`.
+3. En Supabase ejecuta, en orden, `src/modules/usuarios/BBDD/schema.sql`, `src/modules/lista-pendientes/BBDD/schema.sql` y `src/modules/contactabilidad/BBDD/schema.sql`.
 4. Levanta la app con `npm run dev`.
 
 ## Scripts
@@ -24,6 +25,16 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=tu_anon_key
 - `npm run build`
 - `npm run start`
 - `npm run lint`
+
+## Modo de bajo consumo de Supabase
+
+La aplicacion agrupa ediciones consecutivas antes de escribir, consolida el orden del tablero
+en una sola llamada, retrasa las recargas de Realtime y limita cada lectura del historial a
+los 250 registros mas recientes. Esto reduce escrituras, mensajes y transferencia para
+mantener el proyecto dentro de las cuotas del plan Free.
+
+La sincronizacion de Contactabilidad compara primero el Google Sheet con los clientes
+existentes y solo escribe filas nuevas o modificadas.
 
 ## Despliegue en GitHub Pages
 

@@ -11,6 +11,15 @@ Esta carpeta concentra los datos y el modelo del modulo de pendientes.
 - `completed-history-archive.sql`: archivo append-only del historial y recuperacion del snapshot compartido.
 - `complete-pending-task-rpc.sql`: funcion atomica para que cualquier miembro activo del workspace complete o elimine pendientes sin depender del creador.
 
+## Orden fluido y limpieza
+
+El esquema principal incluye `reorder_pending_tasks`, que guarda todo el orden en una sola
+transaccion. La interfaz consolida movimientos consecutivos antes de invocar esta funcion.
+
+Cada persistencia del orden ejecuta tambien `cleanup_pending_data`: elimina del historial
+solamente registros cuya accion fue `eliminada` y que tienen mas de 90 dias. Las tareas
+completadas se conservan.
+
 ## Tablas
 
 - `lista_pendientes`: pendientes activos y siempre visibles.

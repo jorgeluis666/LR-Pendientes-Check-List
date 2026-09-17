@@ -1,6 +1,7 @@
 "use client";
 
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
+import { ContactabilidadModule } from "@/modules/contactabilidad/components/contactabilidad-module";
 import { ListaPendientesModule } from "@/modules/lista-pendientes/components/lista-pendientes-module";
 import type { PendingResponsibleOption } from "@/modules/lista-pendientes/types";
 import type { User } from "@supabase/supabase-js";
@@ -120,7 +121,7 @@ export default function Home() {
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [inviteForm, setInviteForm] = useState({ email: "", rol: "viewer" as MemberRole });
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
-  const [view, setView] = useState<"pendientes" | "usuarios">("pendientes");
+  const [view, setView] = useState<"pendientes" | "contactabilidad" | "usuarios">("pendientes");
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const currentMembership = useMemo(
@@ -573,6 +574,21 @@ export default function Home() {
             </button>
             <button
               type="button"
+              onClick={() => setView("contactabilidad")}
+              className={`flex h-14 items-center rounded-lg border text-sm font-bold ${
+                sidebarOpen ? "gap-3 px-4" : "justify-center"
+              } ${
+                view === "contactabilidad"
+                  ? "border-blue-200 bg-blue-50 text-blue-700"
+                  : "border-slate-200 bg-white text-slate-500"
+              }`}
+              title="Contactabilidad"
+            >
+              <span className="text-base">C</span>
+              {sidebarOpen ? <span>Contactabilidad</span> : null}
+            </button>
+            <button
+              type="button"
               onClick={() => setView("usuarios")}
               className={`flex h-14 items-center rounded-lg border text-sm font-bold ${
                 sidebarOpen ? "gap-3 px-4" : "justify-center"
@@ -645,6 +661,12 @@ export default function Home() {
 
           {view === "pendientes" ? (
             <ListaPendientesModule user={user} workspaceId={workspaceActivo} responsables={responsablesPendientes} />
+          ) : view === "contactabilidad" ? (
+            <ContactabilidadModule
+              workspaceId={workspaceActivo}
+              userId={user.id}
+              canEdit={Boolean(currentMembership && currentMembership.rol !== "viewer")}
+            />
           ) : (
             <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
               <div className="mb-6 flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">

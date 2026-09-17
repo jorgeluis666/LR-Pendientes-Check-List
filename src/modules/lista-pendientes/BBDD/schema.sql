@@ -292,6 +292,87 @@ $$;
 
 grant execute on function public.complete_pending_task(uuid, text, text) to authenticated;
 
+create or replace function public.cleanup_pending_data(
+  target_workspace_id uuid,
+  retention_days integer default 90
+)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  deleted_count bigint;
+begin
+  if not public.is_workspace_member(target_workspace_id) then
+    raise exception 'No tienes permiso para limpiar este workspace';
+  end if;
+
+  delete from public.lista_pendientes_completadas
+  where workspace_id = target_workspace_id
+    and accion = 'eliminada'
+    and fecha_finalizacion < now() - make_interval(days => greatest(retention_days, 30));
+
+  get diagnostics deleted_count = row_count;
+  return deleted_count;
+end;
+$$;
+
+grant execute on function public.cleanup_pending_data(uuid, integer) to authenticated;
+
+create or replace function public.reorder_pending_tasks(
+  target_workspace_id uuid,
+  ordered_task_ids uuid[]
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  active_task_count bigint;
+  supplied_task_count bigint;
+begin
+  if not public.is_workspace_member(target_workspace_id) then
+    raise exception 'No tienes permiso para ordenar este workspace';
+  end if;
+
+  select count(*) into active_task_count
+  from public.lista_pendientes
+  where workspace_id = target_workspace_id;
+
+  select count(distinct task_id) into supplied_task_count
+  from unnest(ordered_task_ids) as task_id;
+
+  if active_task_count <> supplied_task_count
+    or exists (
+      select 1
+      from unnest(ordered_task_ids) as task_id
+      where not exists (
+        select 1
+        from public.lista_pendientes pending
+        where pending.id = task_id
+          and pending.workspace_id = target_workspace_id
+      )
+    )
+  then
+    raise exception 'La lista cambio durante el ordenamiento; vuelve a intentarlo';
+  end if;
+
+  update public.lista_pendientes pending
+  set
+    orden = ordered.position - 1,
+    updated_at = now()
+  from unnest(ordered_task_ids) with ordinality as ordered(task_id, position)
+  where pending.id = ordered.task_id
+    and pending.workspace_id = target_workspace_id;
+
+  perform public.cleanup_pending_data(target_workspace_id, 90);
+end;
+$$;
+
+grant execute on function public.reorder_pending_tasks(uuid, uuid[]) to authenticated;
+
 do $$
 begin
   begin
