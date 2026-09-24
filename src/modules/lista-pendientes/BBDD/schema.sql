@@ -387,3 +387,53 @@ begin
     when duplicate_object then null;
   end;
 end $$;
+
+-- ── Escritura solo para editores ──────────────────────────────────────────
+-- Las politicas de arriba dejaban a cualquier miembro activo (incluido un viewer) crear, editar y
+-- borrar pendientes. Estas las reemplazan: leer sigue abierto a todo miembro, escribir exige editor.
+create or replace function public.is_workspace_editor(target_workspace_id uuid)
+returns boolean
+language sql
+security definer
+set search_path = public
+stable
+as $$
+  select exists (
+    select 1
+    from public.workspace_members wm
+    where wm.workspace_id = target_workspace_id
+      and wm.user_id = auth.uid()
+      and wm.estado = 'activo'
+      and wm.rol in ('superadmin', 'owner', 'admin', 'editor')
+  );
+$$;
+
+grant execute on function public.is_workspace_editor(uuid) to authenticated;
+
+drop policy if exists "workspace members can insert pending tasks" on public.lista_pendientes;
+drop policy if exists "workspace members can update pending tasks" on public.lista_pendientes;
+drop policy if exists "workspace members can delete pending tasks" on public.lista_pendientes;
+
+create policy "workspace members can insert pending tasks"
+  on public.lista_pendientes for insert to authenticated
+  with check (public.is_workspace_editor(workspace_id));
+
+create policy "workspace members can update pending tasks"
+  on public.lista_pendientes for update to authenticated
+  using (public.is_workspace_editor(workspace_id))
+  with check (public.is_workspace_editor(workspace_id));
+
+create policy "workspace members can delete pending tasks"
+  on public.lista_pendientes for delete to authenticated
+  using (public.is_workspace_editor(workspace_id));
+
+drop policy if exists "workspace members can insert completed tasks" on public.lista_pendientes_completadas;
+drop policy if exists "workspace members can delete completed tasks" on public.lista_pendientes_completadas;
+
+create policy "workspace members can insert completed tasks"
+  on public.lista_pendientes_completadas for insert to authenticated
+  with check (public.is_workspace_editor(workspace_id));
+
+create policy "workspace members can delete completed tasks"
+  on public.lista_pendientes_completadas for delete to authenticated
+  using (public.is_workspace_editor(workspace_id));

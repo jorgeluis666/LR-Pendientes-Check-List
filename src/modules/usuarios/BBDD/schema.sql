@@ -135,9 +135,21 @@ create policy "members can read workspace members"
   on public.workspace_members for select
   using (user_id = auth.uid() or public.is_workspace_member(workspace_id));
 
+-- Un usuario solo se agrega a si mismo como owner de un workspace que es suyo; invitar a otros es de
+-- owners/admins. Antes bastaba user_id = auth.uid() para entrar a cualquier workspace con cualquier rol.
 create policy "workspace managers can invite members"
-  on public.workspace_members for insert
-  with check (user_id = auth.uid() or public.is_workspace_manager(workspace_id));
+  on public.workspace_members for insert to authenticated
+  with check (
+    public.is_workspace_manager(workspace_id)
+    or (
+      user_id = auth.uid()
+      and rol = 'owner'
+      and exists (
+        select 1 from public.workspaces w
+        where w.id = workspace_id and w.owner_id = auth.uid()
+      )
+    )
+  );
 
 create policy "users can accept own invitations"
   on public.workspace_members for update
@@ -152,3 +164,42 @@ create policy "workspace managers can update members"
 create policy "workspace managers can delete members"
   on public.workspace_members for delete
   using (public.is_workspace_manager(workspace_id));
+
+-- Nadie cambia su propio rol (p. ej. al aceptar una invitacion de viewer) ni se asigna 'superadmin'.
+-- is_lr_superadmin() la define LR-suite (control-roas/BBDD/superadmin.sql) sobre la misma BBDD; si no
+-- existe, nadie puede asignar superadmin desde la API.
+create or replace function public.guard_workspace_member_role()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  caller_is_superadmin boolean := false;
+begin
+  -- SQL Editor / migraciones (no pasan por la API): sin restriccion.
+  if session_user <> 'authenticator' then
+    return new;
+  end if;
+  if to_regprocedure('public.is_lr_superadmin()') is not null then
+    execute 'select public.is_lr_superadmin()' into caller_is_superadmin;
+  end if;
+  if caller_is_superadmin then
+    return new;
+  end if;
+  if new.rol = 'superadmin' then
+    raise exception 'Rol no permitido';
+  end if;
+  if tg_op = 'UPDATE'
+     and new.rol is distinct from old.rol
+     and not public.is_workspace_manager(old.workspace_id) then
+    raise exception 'Solo un owner o admin puede cambiar roles';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists guard_workspace_member_role on public.workspace_members;
+create trigger guard_workspace_member_role
+  before insert or update on public.workspace_members
+  for each row execute function public.guard_workspace_member_role();
