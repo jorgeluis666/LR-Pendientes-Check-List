@@ -27,13 +27,8 @@ begin
     raise exception 'Pendiente no encontrado o no disponible';
   end if;
 
-  if not exists (
-    select 1
-    from public.workspace_members wm
-    where wm.workspace_id = pending_task.workspace_id
-      and wm.user_id = auth.uid()
-      and wm.estado = 'activo'
-  ) then
+  -- Solo editores: la funcion es security definer (se salta RLS) y antes bastaba ser miembro.
+  if not public.is_workspace_editor(pending_task.workspace_id) then
     raise exception 'No tienes permiso para completar este pendiente';
   end if;
 

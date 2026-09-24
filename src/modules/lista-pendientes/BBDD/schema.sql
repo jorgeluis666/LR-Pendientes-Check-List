@@ -39,7 +39,8 @@ begin
   alter table public.lista_pendientes drop constraint if exists lista_pendientes_prioridad_check;
   alter table public.lista_pendientes
     add constraint lista_pendientes_prioridad_check
-    check (prioridad in ('alta', 'media', 'baja'));
+    -- LR-suite guarda 'Media' y LR-Pendientes 'media' en la misma tabla: se aceptan ambas.
+    check (lower(prioridad) in ('alta', 'media', 'baja'));
 
   if exists (
     select 1
@@ -98,7 +99,7 @@ alter table public.lista_pendientes_completadas
 
 alter table public.lista_pendientes_completadas
   add constraint lista_pendientes_completadas_prioridad_check
-  check (prioridad in ('alta', 'media', 'baja'));
+  check (lower(prioridad) in ('alta', 'media', 'baja'));
 
 create index if not exists lista_pendientes_workspace_idx
   on public.lista_pendientes(workspace_id, fecha_creacion);
@@ -232,13 +233,8 @@ begin
     raise exception 'Pendiente no encontrado o no disponible';
   end if;
 
-  if not exists (
-    select 1
-    from public.workspace_members wm
-    where wm.workspace_id = pending_task.workspace_id
-      and wm.user_id = auth.uid()
-      and wm.estado = 'activo'
-  ) then
+  -- Solo editores: la funcion es security definer (se salta RLS) y antes bastaba ser miembro.
+  if not public.is_workspace_editor(pending_task.workspace_id) then
     raise exception 'No tienes permiso para completar este pendiente';
   end if;
 
@@ -304,7 +300,7 @@ as $$
 declare
   deleted_count bigint;
 begin
-  if not public.is_workspace_member(target_workspace_id) then
+  if not public.is_workspace_editor(target_workspace_id) then
     raise exception 'No tienes permiso para limpiar este workspace';
   end if;
 
@@ -333,7 +329,7 @@ declare
   active_task_count bigint;
   supplied_task_count bigint;
 begin
-  if not public.is_workspace_member(target_workspace_id) then
+  if not public.is_workspace_editor(target_workspace_id) then
     raise exception 'No tienes permiso para ordenar este workspace';
   end if;
 

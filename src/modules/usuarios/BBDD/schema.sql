@@ -125,6 +125,13 @@ create policy "owners can update workspaces"
   using (owner_id = auth.uid())
   with check (owner_id = auth.uid());
 
+-- Quien crea un workspace tiene que poder leerlo antes de ser miembro: sin esto el alta del primer
+-- workspace (insert ... select, y la politica de alta de miembros de abajo) falla.
+drop policy if exists "owners can read own workspaces" on public.workspaces;
+create policy "owners can read own workspaces"
+  on public.workspaces for select to authenticated
+  using (owner_id = auth.uid());
+
 drop policy if exists "members can read workspace members" on public.workspace_members;
 drop policy if exists "users can accept own invitations" on public.workspace_members;
 drop policy if exists "workspace managers can invite members" on public.workspace_members;
@@ -151,10 +158,20 @@ create policy "workspace managers can invite members"
     )
   );
 
+-- El invitado tiene que poder ver su propia invitacion pendiente: un UPDATE con WHERE solo alcanza
+-- filas visibles por alguna politica de SELECT, y "members can read workspace members" no la cubre
+-- (todavia no es miembro ni tiene user_id). Sin esta politica aceptar una invitacion no hace nada.
+drop policy if exists "users can read own invitations" on public.workspace_members;
+create policy "users can read own invitations"
+  on public.workspace_members for select to authenticated
+  using (lower(email) = lower(auth.email()));
+
+-- Aceptar una invitacion: solo la propia (por email) y sin cambiar de email.
+drop policy if exists "users can accept own invitations" on public.workspace_members;
 create policy "users can accept own invitations"
-  on public.workspace_members for update
+  on public.workspace_members for update to authenticated
   using (lower(email) = lower(auth.email()) and estado = 'pendiente')
-  with check (user_id = auth.uid() and estado = 'activo');
+  with check (user_id = auth.uid() and estado = 'activo' and lower(email) = lower(auth.email()));
 
 create policy "workspace managers can update members"
   on public.workspace_members for update
@@ -165,9 +182,26 @@ create policy "workspace managers can delete members"
   on public.workspace_members for delete
   using (public.is_workspace_manager(workspace_id));
 
--- Nadie cambia su propio rol (p. ej. al aceptar una invitacion de viewer) ni se asigna 'superadmin'.
--- is_lr_superadmin() la define LR-suite (control-roas/BBDD/superadmin.sql) sobre la misma BBDD; si no
--- existe, nadie puede asignar superadmin desde la API.
+-- Borrar miembros: managers, pero la fila del owner solo la toca el dueño del workspace.
+drop policy if exists "workspace managers can delete members" on public.workspace_members;
+create policy "workspace managers can delete members"
+  on public.workspace_members for delete to authenticated
+  using (
+    public.is_workspace_manager(workspace_id)
+    and (
+      rol <> 'owner'
+      or exists (
+        select 1 from public.workspaces w
+        where w.id = workspace_id and w.owner_id = auth.uid()
+      )
+    )
+  );
+
+-- Reglas que las politicas no pueden expresar (comparar con la fila anterior):
+--   - nadie se asigna 'superadmin' (salvo los superadmins);
+--   - nadie cambia su propio rol ni mueve una membresia a otro workspace;
+--   - solo el dueño del workspace asigna o quita el rol owner;
+--   - nadie se agrega a un workspace que no es suyo.
 create or replace function public.guard_workspace_member_role()
 returns trigger
 language plpgsql
@@ -176,9 +210,10 @@ set search_path = public
 as $$
 declare
   caller_is_superadmin boolean := false;
+  caller_owns_workspace boolean := false;
 begin
-  -- SQL Editor / migraciones (no pasan por la API): sin restriccion.
-  if session_user <> 'authenticator' then
+  -- SQL Editor / migraciones y el backend con service_role: sin restriccion.
+  if session_user <> 'authenticator' or auth.role() = 'service_role' then
     return new;
   end if;
   if to_regprocedure('public.is_lr_superadmin()') is not null then
@@ -190,10 +225,39 @@ begin
   if new.rol = 'superadmin' then
     raise exception 'Rol no permitido';
   end if;
-  if tg_op = 'UPDATE'
-     and new.rol is distinct from old.rol
+
+  select exists (
+    select 1 from public.workspaces w
+    where w.id = new.workspace_id and w.owner_id = auth.uid()
+  ) into caller_owns_workspace;
+
+  if tg_op = 'INSERT' then
+    if new.user_id = auth.uid() and not caller_owns_workspace then
+      raise exception 'No puedes agregarte a un workspace ajeno';
+    end if;
+    if new.rol = 'owner' and not caller_owns_workspace then
+      raise exception 'Solo el dueño del workspace asigna el rol owner';
+    end if;
+    return new;
+  end if;
+
+  if new.workspace_id is distinct from old.workspace_id then
+    raise exception 'No se puede mover una membresia a otro workspace';
+  end if;
+  if lower(coalesce(new.email, '')) is distinct from lower(coalesce(old.email, ''))
      and not public.is_workspace_manager(old.workspace_id) then
-    raise exception 'Solo un owner o admin puede cambiar roles';
+    raise exception 'Solo un owner o admin puede cambiar el email de una membresia';
+  end if;
+  if new.rol is distinct from old.rol then
+    if old.user_id = auth.uid() then
+      raise exception 'No puedes cambiar tu propio rol';
+    end if;
+    if not public.is_workspace_manager(old.workspace_id) then
+      raise exception 'Solo un owner o admin puede cambiar roles';
+    end if;
+    if (new.rol = 'owner' or old.rol = 'owner') and not caller_owns_workspace then
+      raise exception 'Solo el dueño del workspace asigna o quita el rol owner';
+    end if;
   end if;
   return new;
 end;
