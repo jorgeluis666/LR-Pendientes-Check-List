@@ -461,7 +461,7 @@ export default function Home() {
             onSubmit={handleAuthSubmit}
             className="w-full max-w-md rounded-lg border border-white/30 bg-white/95 p-6 shadow-2xl backdrop-blur-sm sm:p-8"
           >
-            <p className="text-xs font-bold uppercase tracking-[0.3em] text-red-700">LR Pendientes</p>
+            <p className="text-xs font-bold uppercase tracking-[0.3em] text-[#2563eb]">LR Pendientes</p>
             <h1 className="mt-3 text-3xl font-bold">Ingresa a tu workspace</h1>
             <p className="mt-3 text-sm font-semibold leading-6 text-gray-600">
               Crea tu cuenta, abre tu workspace y agrega tus propios usuarios con roles.
@@ -480,7 +480,7 @@ export default function Home() {
                   setAuthError("");
                   setAuthMessage("");
                 }}
-                className={`rounded-md px-3 py-2 text-sm font-bold ${authMode === "login" ? "bg-white text-red-700 shadow-sm" : "text-gray-600"}`}
+                className={`rounded-md px-3 py-2 text-sm font-bold ${authMode === "login" ? "bg-white text-[#2563eb] shadow-sm" : "text-gray-600"}`}
               >
                 Iniciar sesion
               </button>
@@ -491,7 +491,7 @@ export default function Home() {
                   setAuthError("");
                   setAuthMessage("");
                 }}
-                className={`rounded-md px-3 py-2 text-sm font-bold ${authMode === "register" ? "bg-white text-red-700 shadow-sm" : "text-gray-600"}`}
+                className={`rounded-md px-3 py-2 text-sm font-bold ${authMode === "register" ? "bg-white text-[#2563eb] shadow-sm" : "text-gray-600"}`}
               >
                 Crear cuenta
               </button>
@@ -502,7 +502,7 @@ export default function Home() {
               placeholder="Email"
               value={authForm.email}
               onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+              className="w-full rounded-lg border-[1.5px] border-[#dce3ef] bg-[#e8f0fe] px-4 py-3 outline-none placeholder:text-slate-500 focus:border-[#2563eb]"
             />
             {authMode === "register" ? (
               <input
@@ -511,7 +511,7 @@ export default function Home() {
                 placeholder="Nombre de tu workspace"
                 value={registerWorkspaceName}
                 onChange={(event) => setRegisterWorkspaceName(event.target.value)}
-                className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+                className="w-full rounded-lg border-[1.5px] border-[#dce3ef] bg-[#e8f0fe] px-4 py-3 outline-none placeholder:text-slate-500 focus:border-[#2563eb]"
               />
             ) : null}
             <input
@@ -521,14 +521,14 @@ export default function Home() {
               placeholder="Contrasena"
               value={authForm.password}
               onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
-              className="w-full rounded-lg border border-gray-300 px-4 py-3 outline-none focus:border-red-600 focus:ring-2 focus:ring-red-100"
+              className="w-full rounded-lg border-[1.5px] border-[#dce3ef] bg-[#e8f0fe] px-4 py-3 outline-none placeholder:text-slate-500 focus:border-[#2563eb]"
             />
             {authError ? <p className="text-sm font-semibold text-red-700">{authError}</p> : null}
             {!authError && authMessage ? <p className="text-sm font-semibold text-green-700">{authMessage}</p> : null}
             <button
               type="submit"
               disabled={authLoading}
-              className="w-full rounded-lg bg-red-700 px-5 py-3 font-bold text-white transition hover:bg-red-800 disabled:bg-red-400"
+              className="w-full rounded-lg bg-[#2563eb] px-5 py-3 font-bold text-white transition hover:bg-[#1d4ed8] disabled:opacity-60"
             >
               {authLoading ? "Procesando..." : authMode === "login" ? "Entrar" : "Crear cuenta"}
             </button>
